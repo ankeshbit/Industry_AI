@@ -1,4 +1,4 @@
 # INDUSTRIA AI — Root Requirements
 # Points to modular requirements files
 -r ml/requirements.txt
-
+-r backend/requirements.txt

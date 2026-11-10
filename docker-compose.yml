@@ -1,0 +1,74 @@
+version: '3.8'
+
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: industria_db
+    restart: always
+    environment:
+      POSTGRES_DB: industria_ai
+      POSTGRES_USER: industria_app
+      POSTGRES_PASSWORD: industria_dev_password
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U industria_app -d industria_ai"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    container_name: industria_api
+    restart: always
+    environment:
+      DATABASE_URL: postgresql://industria_app:industria_dev_password@db:5432/industria_ai
+      MULTI_ORG_ENABLED: "false"
+      SECRET_KEY: industria-ai-dev-secret-key-change-in-production-1234567890
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./storage:/app/storage
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    container_name: industria_worker
+    restart: always
+    command: ["python", "-m", "backend.app.worker"]
+    environment:
+      DATABASE_URL: postgresql://industria_app:industria_dev_password@db:5432/industria_ai
+      MULTI_ORG_ENABLED: "false"
+      SECRET_KEY: industria-ai-dev-secret-key-change-in-production-1234567890
+    volumes:
+      - ./storage:/app/storage
+    depends_on:
+      db:
+        condition: service_healthy
+
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
+    container_name: industria_frontend
+    restart: always
+    ports:
+      - "3000:80"
+    depends_on:
+      - api
+
+volumes:
+  pgdata:

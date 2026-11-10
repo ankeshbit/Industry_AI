@@ -1,180 +1,167 @@
 # INDUSTRIA AI — Industrial Predictive-Maintenance SaaS Platform
 
 [![Python 3.10+](https://img.shields.io/badge/Python-3.10%2B-blue.svg)](https://www.python.org/)
-[![Status](https://img.shields.io/badge/Status-Stage%201%20Foundation-success.svg)]()
+[![Status](https://img.shields.io/badge/Status-Milestone%201%20Complete-success.svg)]()
 [![Architecture](https://img.shields.io/badge/Architecture-Modular%20Monolith-orange.svg)]()
+[![License](https://img.shields.io/badge/PRD%20Version-v1.2%20Authoritative-purple.svg)]()
 
 ---
 
-## 1. Overview & Core Objective
+## 1. Overview & Authoritative Specification
 
-**INDUSTRIA AI** is a predictive-maintenance SaaS platform built to safeguard mission-critical industrial machinery, reduce unplanned downtime, and optimize maintenance intervention schedules.
+**INDUSTRIA AI** is an industrial predictive-maintenance software platform designed to safeguard mission-critical machinery, reduce unplanned downtime, and optimize maintenance intervention schedules.
 
-Industrial plants and asset operators typically rely on either reactive maintenance (fixing equipment after failure, causing expensive production stops) or static preventative maintenance (servicing equipment at arbitrary fixed intervals, causing needless part replacements).
-
-### Main Objectives:
-- **Continuous Condition Monitoring**: Analyze industrial sensor telemetry (temperatures, vibrations, rotational velocities, torque, pressures, and electrical draw) to identify early mechanical and electrical degradation.
-- **Predictive Failure Classification**: Classify imminent failure types (tool wear, thermal dissipation, overstrain, power failure) with confidence intervals.
-- **Remaining Useful Life (RUL)**: Estimate remaining operational hours or cycles before equipment exceeds critical failure thresholds.
-- **Interpretable Root Cause Insights**: Provide plant reliability engineers with explainable AI (SHAP) attributions explaining *why* an asset was flagged.
-- **Cost-Optimized Maintenance Decisions**: Weigh classification thresholds using realistic operational cost penalties ($C_{\text{FN}} \gg C_{\text{FP}}$).
+The platform is specified authoritatively by **INDUSTRIA AI PRD v1.2** (`PRD.md`), which mandates:
+- **Modular Monolith SaaS Architecture:** Pure software design with zero IoT hardware, zero MQTT/streaming overhead, and zero microservices complexity.
+- **Reference-Only Reliability Tier:** The initial reference dataset (AI4I 2020 Predictive Maintenance Dataset) and trained baseline models (`ai4i_failure_clf_notype` and `ai4i_failure_clf_typed`) operate strictly under the `REFERENCE_ONLY` reliability tier. Advisory notices and limitation acknowledgements are enforced across all APIs and UIs.
+- **Defense-in-Depth Multi-Tenancy:** Single shared database schema with tenant isolation enforced via `organisation_id` on every tenant table. Single-organisation mode is enabled by default (`MULTI_ORG_ENABLED=false`).
 
 ---
 
-## 2. Current Development Milestone
+## 2. Milestone 1 Status: COMPLETE
 
-> **Current Status: Stage 1 — Project Foundation & ML Environment Setup**
->
-> In Stage 1, we established the modular-monolith directory layout, configured the Python 3.10 virtual environment, pinned the initial machine learning dependencies, authored documentation templates, and implemented baseline environment smoke tests.
+Milestone 1 — Core AI4I Predictive Maintenance (§18.3, lines 2612–2622) is fully implemented, verified, and audited:
+
+| Requirement Area | PRD v1.2 Clauses | Status | Verification |
+| :--- | :--- | :--- | :--- |
+| **Multi-Tenancy & Auth** | AC-ORG-1..3, AC-SEC-1..4 | Verified | 10 tests passing; Argon2id, JWT refresh rotation, 5-failure lockout, single-org mode enforcement |
+| **Machine Registry** | AC-MM-1..3 | Verified | 6 tests passing; 5 standard categories seeded, unique asset tags per tenant, default plant mapping |
+| **Dataset Ingestion** | AC-DS-1..7, 9, 10 | Verified | 6 tests passing; 50 MB stream limit, magic bytes validation, SHA-256 deduplication, Quality Score $Q$, forbidden feature blocking |
+| **Compatibility Engine** | AC-CE-1..7, AC-AP-1..5 | Verified | 6 tests passing; 3-stage validation, reference range OOD applicability check ($\le 1\%$ clean, $>30\%$ blocked), asserted equivalence |
+| **Inference & Risk Engine** | AC-FP-1..6, 8 | Verified | XGBoost pipelines for `NO_TYPE` and `WITH_TYPE`, threshold $\tau=0.45$, unit normalization (degC $\rightarrow$ K), top highest-risk operating states |
+| **Job Queue & Worker** | AC-JOB-1..5 | Verified | 2 tests passing; transactional idempotency, polling worker process, status tracking |
+| **Container & Deployment** | AC-PLAT-1 | Verified | `Dockerfile.backend`, `Dockerfile.frontend`, `docker-compose.yml` (API, worker, PostgreSQL, React SPA) |
+| **Frontend SPA** | PRD §14, §18.3 | Verified | React + Vite + Tailwind CSS dashboard with mandatory Trust Panel, wizard, and warning acknowledgement |
+| **Authoritative Exit Test** | PRD v1.2 §18.3 (11 steps) | Verified | 100% pass on exact 11-step end-to-end integration test (`backend/tests/test_milestone1_exit.py`) |
 
 ---
 
-## 3. Project Architecture
-
-INDUSTRIA AI follows a strict **modular monolith** design to ensure high velocity and clean domain separation without distributed microservices complexity:
+## 3. Architecture & Directory Structure
 
 ```
-industria-ai/
+Industry_AI/
+├── PRD.md                    # Master Authoritative PRD v1.2 (3,484 lines)
+├── docker-compose.yml        # Full-stack composition (Postgres, API, Worker, Web)
+├── Dockerfile.backend        # Multi-stage Python 3.10 backend container
+├── Dockerfile.frontend       # Multi-stage Node/Nginx frontend container
 │
-├── frontend/             # Single-Page Dashboard (React + TypeScript + Vite + Tailwind CSS)
-├── backend/              # RESTful API Service (FastAPI + SQLAlchemy + Pydantic)
-├── ml/                   # Machine Learning Core
-│   ├── datasets/         # Telemetry data storage
-│   │   ├── raw/          # Raw dataset files (excluded from Git)
-│   │   └── processed/    # Cleaned, feature-engineered datasets
-│   ├── notebooks/        # Exploratory analysis & prototyping notebooks
-│   ├── experiments/      # Experiment configurations and run logs
-│   ├── src/              # Production-grade ML pipeline modules
-│   │   ├── data/         # Ingestion, validation, dataset loaders
-│   │   ├── preprocessing/# Imputation, scaling, outlier filters
-│   │   ├── features/     # Rolling statistics, lag features, interaction terms
-│   │   ├── models/       # Estimators, XGBoost/tree models, serialization
-│   │   ├── evaluation/   # Metrics (PR-AUC, F1, Cost matrix), SHAP attribution
-│   │   └── utils/        # Paths, logging, seed configuration
-│   ├── artifacts/        # Serialized model binaries (.joblib) and plots
-│   ├── tests/            # ML-specific unit tests
-│   └── requirements.txt  # ML package dependencies
+├── backend/                  # RESTful API & Queue Worker (FastAPI + SQLAlchemy 2.0)
+│   ├── app/
+│   │   ├── api/              # API Route Handlers (auth, machines, datasets, compatibility, analyses, jobs)
+│   │   ├── models/           # SQLAlchemy 2.0 models with organisation_id
+│   │   ├── schemas/          # Pydantic v2 schemas and validation models
+│   │   ├── services/         # Domain services (auth, machine, dataset, compatibility, inference, queue, worker)
+│   │   ├── config.py         # App configuration & environment variables
+│   │   ├── database.py       # DB engine, session factory, context vars
+│   │   ├── seed.py           # Database initial seeds (categories, profiles, models)
+│   │   └── main.py           # FastAPI application entry point
+│   ├── requirements.txt      # Backend production dependencies
+│   └── tests/                # Automated pytest suites for backend
 │
-├── docs/                 # Documentation & Governance
-│   ├── PRD.md            # Master Product Requirements Document
-│   ├── DATASET_NOTES.md  # Standardized telemetry dataset documentation template
-│   └── ML_EXPERIMENT_LOG.md # Experiment tracking register
+├── frontend/                 # Web Dashboard SPA (React 18 + TypeScript + Vite + Tailwind CSS)
+│   ├── src/
+│   │   ├── components/       # TrustPanel, MachineRegistry, DatasetUploadWizard, CompatibilityModal, AnalysisView
+│   │   ├── api.ts            # Typed REST API client
+│   │   ├── App.tsx           # Application shell & navigation
+│   │   └── main.tsx          # Client entry point
+│   ├── package.json
+│   └── vite.config.ts
 │
-├── infra/                # Infrastructure & deployment
-│   └── docker/           # Docker Compose and Dockerfile specifications
+├── ml/                       # Machine Learning Core
+│   ├── artifacts/models/     # Serialized reference models (EXP-008 NO_TYPE, EXP-004 WITH_TYPE)
+│   ├── src/                  # ML pipeline, features, evaluation, training
+│   └── tests/                # Baseline and feature engineering test suites
 │
-├── tests/                # System-level smoke tests
-├── .env.example          # Environment variables template
-├── .gitignore            # Git exclusion rules
-├── requirements.txt      # Root entry-point requirements
-└── README.md             # Project master overview
+├── docs/                     # Documentation & Model Cards
+│   ├── PRD.md                # Mirrored PRD v1.2
+│   ├── model_cards/          # ai4i_failure_clf_notype.md & ai4i_failure_clf_typed.md
+│   └── DATASET_NOTES.md      # AI4I 2020 telemetry dataset documentation
+│
+└── samples/                  # Authoritative Test CSV Files
+    ├── ai4i_sample_clean_celsius_no_type.csv
+    ├── ai4i_sample_missing_torque.csv
+    └── ai4i_sample_typed_operating_data.csv
 ```
 
 ---
 
-## 4. Development Environment Setup
+## 4. Running the Platform
 
-### Prerequisites
-- **Operating System**: Windows 10/11, macOS, or Linux (optimized for standard developer laptops, e.g. 16 GB RAM).
-- **Python**: Python 3.10 (verified 64-bit).
-- **Git**: Installed and configured.
+### Option A: Local Development Setup
 
-### Step-by-Step Installation
+#### 1. Backend & ML Environment
+Activate the virtual environment and install dependencies:
+```powershell
+# Windows
+.venv\Scripts\Activate.ps1
+pip install -r backend/requirements.txt
+```
 
-#### 1. Clone the Repository
+Run the backend API server:
+```powershell
+uvicorn backend.app.main:app --reload --port 8000
+```
+*API documentation is available at `http://localhost:8000/docs`.*
+
+In a separate terminal, run the asynchronous job worker:
+```powershell
+python -m backend.app.services.worker
+```
+
+#### 2. Frontend Development Server
+```powershell
+cd frontend
+npm install
+npm run dev
+```
+*The React SPA will be accessible at `http://localhost:5173`.*
+
+---
+
+### Option B: Docker Compose (Full Stack)
+
+To run the complete production-like stack (PostgreSQL, Backend API, Worker, and Frontend Nginx):
 ```bash
-git clone https://github.com/ankeshbit/Industry_AI.git
-cd Industry_AI
+docker compose up --build
 ```
-
-#### 2. Create the Python Virtual Environment
-On Windows (PowerShell):
-```powershell
-python -m venv .venv
-```
-On macOS / Linux:
-```bash
-python3 -m venv .venv
-```
-
-#### 3. Activate the Virtual Environment
-On Windows (PowerShell):
-```powershell
-.\.venv\Scripts\Activate.ps1
-```
-*(If PowerShell displays an Execution Policy restriction, run: `Set-ExecutionPolicy -Scope Process -ExecutionPolicy RemoteSigned`)*
-
-On Windows (Command Prompt):
-```cmd
-.venv\Scripts\activate.bat
-```
-
-On macOS / Linux:
-```bash
-source .venv/bin/activate
-```
-
-#### 4. Install Dependencies
-```powershell
-pip install --upgrade pip
-pip install -r ml/requirements.txt
-```
-*(Alternatively, from root: `pip install -r requirements.txt`)*
-
-#### 5. Verify Environment and Run Tests
-```powershell
-pytest
-```
+- Web Application: `http://localhost:3000`
+- API & Docs: `http://localhost:8000/docs`
+- Database: PostgreSQL on port 5432
 
 ---
 
-## 5. Technology Stack Decisions
+## 5. Automated Verification & Testing
 
-| Component | Selected Technology | Purpose & Rationale |
-|---|---|---|
-| **Language** | Python 3.10+ | Robust data science, telemetry processing, and backend integration. |
-| **Data Processing** | NumPy, Pandas | High-performance vectorized numerical and tabular operations. |
-| **Machine Learning** | Scikit-learn, XGBoost | Industry standard gradient boosting suited for tabular sensor data. |
-| **Explainability** | SHAP | Additive feature attribution providing operators with root-cause insights. |
-| **Notebooks** | JupyterLab | Interactive data exploration and telemetry analysis. |
-| **Backend API (Stage 5)**| FastAPI | Asynchronous REST endpoints, Pydantic typing, auto-generated OpenAPI docs. |
-| **Database (Stage 5)** | PostgreSQL + SQLAlchemy | Relational storage for equipment metadata, maintenance logs, and cached telemetry. |
-| **Frontend (Stage 6)** | React, TypeScript, Vite, Tailwind | Responsive, component-driven dashboard for live telemetry monitoring. |
-| **Infrastructure (Stage 7)**| Docker Compose | Deterministic multi-container development and local orchestration. |
+Run all 49 automated tests across ML baselines, smoke tests, and backend test suites:
+
+```powershell
+.venv\Scripts\python -m pytest
+```
+
+### Milestone 1 Authoritative Exit Test
+To specifically execute the exact 11-step end-to-end integration exit test (§18.3):
+```powershell
+.venv\Scripts\python -m pytest backend/tests/test_milestone1_exit.py -v
+```
+
+This exit test verifies:
+1. First organisation registration succeeds.
+2. Second registration is refused with `403 MULTI_ORG_DISABLED`.
+3. Machine creation and asset tag assignment.
+4. Upload of AI4I CSV with renamed headers, Celsius temperatures, and no Type column.
+5. Column mapping wizard suggestions and unit conversion ($\text{degC} \rightarrow \text{K}$).
+6. Pipeline evaluation offering only `NO_TYPE` (`WITH_TYPE` is marked `INCOMPATIBLE` due to missing `product_type`).
+7. User warning and reference model limitation acknowledgement.
+8. Asynchronous failure prediction analysis execution.
+9. Result persistence with Trust Panel provenance, OOD domain summary, and top highest-risk operating states.
+10. Refusal with remedies on CSV missing torque (`E_MISSING_FEATURE`).
+11. Full compatibility and dual configuration offer on CSV containing Type column with asserted equivalence.
 
 ---
 
-## 6. Planned Development Stages
+## 6. Trust & Transparency Framework
 
-1. **Stage 1: Project Foundation & ML Environment Setup** *(Completed)*
-   - Initial modular-monolith structure.
-   - Python virtual environment configuration and dependency pinning.
-   - Project documentation (`PRD.md`, `DATASET_NOTES.md`, `ML_EXPERIMENT_LOG.md`).
-   - Git and environment security rules (`.gitignore`, `.env.example`).
-   - Smoke and environment verification test suites.
+As mandated by PRD v1.2 §14.2, every prediction result displayed in the UI and returned by the API is accompanied by the standing advisory notice:
 
-2. **Stage 2: Data Ingestion, EDA & Feature Engineering**
-   - Telemetry dataset ingestion and schema validation.
-   - Exploratory data analysis (EDA) for sensor correlation and failure trends.
-   - Windowed feature extraction (rolling means, variances, physical interaction terms).
-
-3. **Stage 3: ML Model Training & Baseline Benchmarking**
-   - Baseline models (Logistic Regression, Random Forest).
-   - Tuned XGBoost gradient boosted classifier.
-   - Stratified evaluation using PR-AUC, Recall, and business cost functions.
-
-4. **Stage 4: Model Explainability, Persistence & MLflow Tracking**
-   - SHAP tree explainer integration.
-   - Model artifact serialization with Joblib.
-   - MLflow experiment logging and model artifact registry.
-
-5. **Stage 5: FastAPI Backend Development**
-   - REST endpoints for asset telemetry ingestion and real-time failure prediction.
-   - SQLAlchemy ORM models and PostgreSQL schema migrations.
-
-6. **Stage 6: React Dashboard & Visualization**
-   - Telemetry time-series charts, equipment health status cards, and SHAP attribution views.
-
-7. **Stage 7: Integration, Containerization & End-to-End Validation**
-   - Docker Compose local stack orchestration, pipeline regression testing, and production deployment readiness.
-
+> **Reference Model Standing Advisory**  
+> "This analysis was produced using a reference model trained on the AI4I 2020 Predictive Maintenance Dataset. It reflects machine tool operating patterns from that reference dataset and has not been validated on your specific equipment or operating conditions. Predictions must be treated as advisory inputs to human maintenance decisions, not as definitive health assessments. The operator assumes full responsibility for maintenance decisions."

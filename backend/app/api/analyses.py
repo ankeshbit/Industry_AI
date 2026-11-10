@@ -1,0 +1,183 @@
+"""
+Analysis Execution and Results Endpoints (PRD v1.2 §8.6, §13.5, AC-FP-1..8, AC-AP-1..5)
+Enforces the job-creation gate, dispatches analysis execution, and returns
+results with complete provenance, trust metadata, and OOD flags.
+"""
+
+from typing import Optional, List, Dict, Any
+from pydantic import BaseModel, Field
+from fastapi import APIRouter, Depends, status, HTTPException, Header
+from sqlalchemy.orm import Session
+
+from backend.app.database import get_db
+from backend.app.models.auth import User
+from backend.app.models.compatibility import CompatibilityCheck
+from backend.app.models.analysis import AnalysisResult
+from backend.app.api.deps import get_current_user
+from backend.app.services.compatibility_service import verify_job_creation_gate
+from backend.app.services.queue_service import enqueue_job, execute_job_synchronous
+from backend.app.services.inference_service import execute_analysis
+
+router = APIRouter(tags=["Analyses"])
+
+class CreateAnalysisRequest(BaseModel):
+    compatibility_check_id: str
+    acknowledged_reason_codes: List[str] = Field(default_factory=list)
+    limitation_acknowledged: bool = False
+    parameters: Optional[Dict[str, Any]] = None
+    force_rerun: bool = False
+
+def format_analysis_result(res: AnalysisResult) -> Dict[str, Any]:
+    dataset = res.machine.datasets[0] if res.machine.datasets else None
+    return {
+        "id": res.id,
+        "machine_id": res.machine_id,
+        "pipeline": res.pipeline,
+        "configuration": res.configuration,
+        "result_version": res.result_version,
+        "is_latest": res.is_latest,
+        "provenance": {
+            "dataset": {
+                "id": res.dataset_version_id,
+                "name": dataset.name if dataset else "unknown",
+                "version": res.result_version,
+                "provenance": dataset.provenance if dataset else "CUSTOMER"
+            },
+            "profile": f"{res.configuration}@1.0.0",
+            "model": {
+                "registry_name": "ai4i_failure_clf_notype" if res.configuration == "NO_TYPE" else "ai4i_failure_clf_typed",
+                "version": "1.0.0",
+                "training_domain": res.training_domain,
+                "trained_on": "AI4I 2020 (synthetic)"
+            },
+            "computed_at": res.created_at.isoformat()
+        },
+        "trust": {
+            "compatibility": "COMPATIBLE",
+            "applicability": res.applicability_level,
+            "reliability_tier": res.reliability_tier,
+            "label": "Reference-dataset-trained model – not validated on your equipment"
+        },
+        "semantics": "Reference-calibrated failure probability for the supplied operating state; no time horizon is implied.",
+        "evaluation_sections": {
+            "reference_dataset_evaluation": {"model_card_uri": res.artifact_uri},
+            "customer_specific_validation": None
+        },
+        "summary": res.summary,
+        "ood_summary": res.ood_summary,
+        "limitations": res.limitations,
+        "explanation_disclaimer": "Feature attributions describe model behaviour, not physical causation.",
+        "created_at": res.created_at.isoformat()
+    }
+
+@router.post("/analyses", status_code=status.HTTP_202_ACCEPTED)
+def request_analysis(
+    req: CreateAnalysisRequest,
+    idempotency_key: Optional[str] = Header(None, alias="Idempotency-Key"),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Authorizes and executes an analysis run (PRD §8.4.7, §13.5).
+    Enforces the job-creation gate:
+    - 422 INCOMPATIBLE / INSUFFICIENT_DATA / UNSUPPORTED_FORMAT
+    - 422 APPLICABILITY_BLOCKED
+    - 422 WARNINGS_NOT_ACKNOWLEDGED
+    - 422 LIMITATIONS_NOT_ACKNOWLEDGED
+    """
+    check = verify_job_creation_gate(
+        db=db,
+        org_id=current_user.organisation_id,
+        compatibility_check_id=req.compatibility_check_id,
+        acknowledged_reason_codes=req.acknowledged_reason_codes,
+        limitation_acknowledged=req.limitation_acknowledged
+    )
+
+    # Enqueue job
+    payload = {
+        "compatibility_check_id": check.id,
+        "dataset_version_id": check.dataset_version_id,
+        "machine_id": check.machine_id,
+        "profile_uuid": check.profile_uuid,
+        "configuration": check.profile.configuration,
+        "params": req.parameters or {}
+    }
+
+    job, is_new = enqueue_job(
+        db=db,
+        org_id=current_user.organisation_id,
+        job_type="RUN_ANALYSIS",
+        payload=payload,
+        idempotency_key=idempotency_key,
+        user_id=current_user.id
+    )
+
+    # For local/testing fast-path: execute immediately if new
+    if is_new or req.force_rerun:
+        job = execute_job_synchronous(db, job)
+
+    # Fetch created result
+    result = db.query(AnalysisResult).filter(
+        AnalysisResult.job_id == job.id,
+        AnalysisResult.organisation_id == current_user.organisation_id
+    ).first()
+
+    if not result:
+        # Fallback if executed directly or queued
+        result = db.query(AnalysisResult).filter(
+            AnalysisResult.compatibility_check_id == check.id,
+            AnalysisResult.organisation_id == current_user.organisation_id
+        ).order_by(AnalysisResult.created_at.desc()).first()
+
+    return {
+        "job_id": job.id,
+        "status": job.status,
+        "analysis_result_id": result.id if result else None
+    }
+
+@router.get("/analyses/{result_id}", status_code=status.HTTP_200_OK)
+def get_analysis_result(
+    result_id: str,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Returns AnalysisResult with complete provenance, trust block, and limitations (AC-FP-5, AC-AP-4)."""
+    res = db.query(AnalysisResult).filter(
+        AnalysisResult.id == result_id,
+        AnalysisResult.organisation_id == current_user.organisation_id
+    ).first()
+    if not res:
+        raise HTTPException(status_code=404, detail="Analysis result not found.")
+    return format_analysis_result(res)
+
+@router.get("/analyses/{result_id}/rows", status_code=status.HTTP_200_OK)
+def get_analysis_rows(
+    result_id: str,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Returns top rows with failure probabilities, risk classes, and OOD flags (AC-FP-8)."""
+    res = db.query(AnalysisResult).filter(
+        AnalysisResult.id == result_id,
+        AnalysisResult.organisation_id == current_user.organisation_id
+    ).first()
+    if not res:
+        raise HTTPException(status_code=404, detail="Analysis result not found.")
+    return {
+        "analysis_id": res.id,
+        "total_rows": res.summary.get("total_rows", 0),
+        "top_rows": res.top_rows
+    }
+
+@router.get("/machines/{id}/analyses", status_code=status.HTTP_200_OK)
+def get_machine_analyses(
+    id: str,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Returns historical prediction results for a machine."""
+    results = db.query(AnalysisResult).filter(
+        AnalysisResult.machine_id == id,
+        AnalysisResult.organisation_id == current_user.organisation_id
+    ).order_by(AnalysisResult.created_at.desc()).all()
+    return [format_analysis_result(r) for r in results]

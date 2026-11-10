@@ -1,0 +1,229 @@
+/**
+ * API Client for INDUSTRIA AI Backend (PRD v1.2 §13)
+ */
+
+const BASE_URL = '/api/v1';
+
+export interface User {
+  id: string;
+  email: string;
+  full_name: string;
+  role: string;
+  organisation: {
+    id: string;
+    name: string;
+    slug: string;
+  };
+}
+
+export interface Machine {
+  id: string;
+  asset_tag: string;
+  name: string;
+  category_code: string;
+  plant_id: string;
+  manufacturer?: string;
+  model_number?: string;
+  serial_number?: string;
+  install_date?: string;
+  archived_at?: string;
+  created_at: string;
+}
+
+export interface CompatibilityCheck {
+  id: string;
+  dataset_version_id: string;
+  machine_id: string;
+  profile: {
+    id: string;
+    profile_id: string;
+    version: string;
+    pipeline: string;
+    configuration: string;
+  };
+  compatibility: {
+    status: 'COMPATIBLE' | 'COMPATIBLE_WITH_WARNINGS' | 'INCOMPATIBLE' | 'INSUFFICIENT_DATA' | 'UNSUPPORTED_FORMAT';
+    reasons: Array<{
+      code: string;
+      severity: string;
+      feature?: string;
+      observed?: any;
+      expected?: any;
+      message: string;
+      remedy?: string;
+    }>;
+  };
+  applicability: {
+    level: 'IN_REFERENCE_RANGE' | 'PARTLY_OUTSIDE_REFERENCE_RANGE' | 'MOSTLY_OUTSIDE_REFERENCE_RANGE' | 'NOT_ASSESSED';
+    flagged_row_fraction: number;
+    per_feature: Record<string, number>;
+    domain_note: string;
+    disclaimer: string;
+  };
+  reliability: {
+    tier: 'REFERENCE_ONLY' | 'CUSTOMER_VALIDATED' | 'NOT_APPLICABLE';
+    statement: string;
+  };
+  requires_acknowledgement: string[];
+  requires_limitation_acknowledgement: boolean;
+  created_at: string;
+}
+
+export interface AnalysisResult {
+  id: string;
+  machine_id: string;
+  pipeline: string;
+  configuration: string;
+  result_version: number;
+  is_latest: boolean;
+  provenance: {
+    dataset: { id: string; name: string; version: number; provenance: string };
+    profile: string;
+    model: { registry_name: string; version: string; training_domain: string; trained_on: string };
+    computed_at: string;
+  };
+  trust: {
+    compatibility: string;
+    applicability: string;
+    reliability_tier: string;
+    label: string;
+  };
+  semantics: string;
+  evaluation_sections: {
+    reference_dataset_evaluation: { model_card_uri: string };
+    customer_specific_validation: null;
+  };
+  summary: {
+    total_rows: number;
+    predicted_failures: number;
+    failure_rate: number;
+    mean_failure_probability: number;
+    threshold_used: number;
+    risk_distribution: { LOW: number; MEDIUM: number; HIGH: number };
+  };
+  ood_summary: {
+    total_rows: number;
+    flagged_rows: number;
+    flagged_fraction: number;
+    per_feature: Record<string, number>;
+  };
+  limitations: string[];
+  explanation_disclaimer: string;
+  created_at: string;
+}
+
+function getAuthHeader(): Record<string, string> {
+  const token = localStorage.getItem('access_token');
+  return token ? { Authorization: `Bearer ${token}` } : {};
+}
+
+export async function request<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
+  const url = `${BASE_URL}${endpoint}`;
+  const headers = {
+    'Content-Type': 'application/json',
+    ...getAuthHeader(),
+    ...options.headers,
+  };
+
+  const res = await fetch(url, { ...options, headers });
+  if (!res.ok) {
+    const errorJson = await res.json().catch(() => ({ error: { message: res.statusText } }));
+    throw errorJson.error || { message: res.statusText, status: res.status };
+  }
+  return res.json();
+}
+
+// Authentication API
+export const api = {
+  auth: {
+    register: (data: { organisation_name: string; email: string; full_name: string; password: string }) =>
+      request('/auth/register', { method: 'POST', body: JSON.stringify(data) }),
+    login: async (credentials: { email: string; password: string }) => {
+      const data = await request<{ access_token: string; refresh_token: string; user: User }>('/auth/login', {
+        method: 'POST',
+        body: JSON.stringify(credentials),
+      });
+      localStorage.setItem('access_token', data.access_token);
+      localStorage.setItem('refresh_token', data.refresh_token);
+      return data;
+    },
+    getMe: () => request<User>('/users/me'),
+    logout: () => {
+      localStorage.removeItem('access_token');
+      localStorage.removeItem('refresh_token');
+    },
+  },
+
+  machines: {
+    list: () => request<Machine[]>('/machines'),
+    get: (id: string) => request<Machine>(`/machines/${id}`),
+    create: (data: { asset_tag: string; name: string; category_code: string; manufacturer?: string; model_number?: string }) =>
+      request<Machine>('/machines', { method: 'POST', body: JSON.stringify(data) }),
+    archive: (id: string) => request(`/machines/${id}/archive`, { method: 'POST' }),
+    categories: () => request<Array<{ code: string; name: string }>>('/machine-categories'),
+  },
+
+  datasets: {
+    createForMachine: (machineId: string, data: { name: string; dataset_type?: string }) =>
+      request<{ id: string; name: string }>(`/machines/${machineId}/datasets`, { method: 'POST', body: JSON.stringify(data) }),
+    upload: async (datasetId: string, file: File) => {
+      const formData = new FormData();
+      formData.append('file', file);
+      const res = await fetch(`${BASE_URL}/datasets/${datasetId}/versions/upload`, {
+        method: 'POST',
+        headers: getAuthHeader(),
+        body: formData,
+      });
+      if (!res.ok) {
+        const error = await res.json().catch(() => ({ error: { message: res.statusText } }));
+        throw error.error || { message: res.statusText };
+      }
+      return res.json();
+    },
+    getVersion: (vid: string) => request<any>(`/dataset-versions/${vid}`),
+    getPreview: (vid: string) => request<{ preview: any[] }>(`/dataset-versions/${vid}/preview`),
+    getSuggestions: (vid: string, profileId: string) =>
+      request<{ suggestions: Record<string, any> }>(`/dataset-versions/${vid}/mappings/${profileId}/suggestions`),
+    saveMapping: (vid: string, profileId: string, mappings: any) =>
+      request(`/dataset-versions/${vid}/mappings/${profileId}`, { method: 'PUT', body: JSON.stringify({ mappings }) }),
+    getValidationReport: (vid: string) => request<any>(`/dataset-versions/${vid}/validation-reports`),
+  },
+
+  compatibility: {
+    runChecks: (vid: string, profileId?: string) =>
+      request<CompatibilityCheck[]>(`/dataset-versions/${vid}/compatibility-checks`, {
+        method: 'POST',
+        body: JSON.stringify({ profile_id: profileId }),
+      }),
+    acknowledgeWarnings: (checkId: string, reasonCodes: string[]) =>
+      request(`/compatibility-checks/${checkId}/acknowledge-warnings`, {
+        method: 'POST',
+        body: JSON.stringify({ reason_codes: reasonCodes }),
+      }),
+    acknowledgeLimitation: (machineId: string, profileUuid: string) =>
+      request('/limitations/acknowledge', {
+        method: 'POST',
+        body: JSON.stringify({ machine_id: machineId, profile_uuid: profileUuid }),
+      }),
+  },
+
+  analyses: {
+    run: (checkId: string, acknowledgedWarnings: string[], limitationAcknowledged: boolean) =>
+      request<{ job_id: string; status: string; analysis_result_id?: string }>('/analyses', {
+        method: 'POST',
+        body: JSON.stringify({
+          compatibility_check_id: checkId,
+          acknowledged_reason_codes: acknowledgedWarnings,
+          limitation_acknowledged: limitationAcknowledged,
+        }),
+      }),
+    get: (resultId: string) => request<AnalysisResult>(`/analyses/${resultId}`),
+    getRows: (resultId: string) => request<{ analysis_id: string; total_rows: number; top_rows: any[] }>(`/analyses/${resultId}/rows`),
+    getMachineAnalyses: (machineId: string) => request<AnalysisResult[]>(`/machines/${machineId}/analyses`),
+  },
+
+  models: {
+    list: () => request<any[]>('/models'),
+  },
+};
+
