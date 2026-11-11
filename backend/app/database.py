@@ -17,14 +17,31 @@ current_tenant_id: ContextVar[Optional[uuid.UUID]] = ContextVar("current_tenant_
 
 # Engine setup
 connect_args = {}
+engine_kwargs = {
+    "pool_pre_ping": True,
+    "echo": False,
+}
+
 if settings.DATABASE_URL.startswith("sqlite"):
     connect_args["check_same_thread"] = False
+else:
+    # Neon PostgreSQL configuration with serverless pooling & SSL support (PRD v1.2 §12)
+    # - pool_pre_ping: validates connections on checkout (handles cold-starts and compute resumes)
+    # - pool_recycle: proactively recycles idle connections before PgBouncer timeouts
+    # - pool_size / max_overflow: bounds client connections for serverless compute limits
+    engine_kwargs.update({
+        "pool_size": 10,
+        "max_overflow": 20,
+        "pool_recycle": 300,
+        "pool_timeout": 30,
+    })
+    if "sslmode=" not in settings.DATABASE_URL.lower():
+        connect_args["sslmode"] = "require"
 
 engine = create_engine(
     settings.DATABASE_URL,
     connect_args=connect_args,
-    pool_pre_ping=True,
-    echo=False
+    **engine_kwargs
 )
 
 # Enable SQLite foreign key support
