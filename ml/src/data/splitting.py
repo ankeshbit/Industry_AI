@@ -45,8 +45,8 @@ def generate_stratified_split(
     )
 
     # Calculate deterministic hash of indices
-    train_hash = hashlib.sha256(train_idx.tobytes()).hexdigest()
-    test_hash = hashlib.sha256(test_idx.tobytes()).hexdigest()
+    train_hash = hashlib.sha256(np.asarray(train_idx, dtype=np.int64).tobytes()).hexdigest()
+    test_hash = hashlib.sha256(np.asarray(test_idx, dtype=np.int64).tobytes()).hexdigest()
 
     metadata = {
         "dataset_checksum": AI4I_SHA256_CHECKSUM,

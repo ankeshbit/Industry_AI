@@ -120,6 +120,8 @@ npm run dev
 
 ### Option B: Docker Compose (Full Stack)
 
+> **Prerequisite:** the reference model files (`ml/artifacts/models/*.joblib`) are gitignored. Place `ai4i2020.csv` in `ml/datasets/raw/` and run `python ml/experiments/run_baseline_experiments.py` *before* `docker compose up --build`, otherwise the image has no models and analyses fail with `Model artifact not found`.
+
 To run the complete production-like stack (PostgreSQL, Backend API, Worker, and Frontend Nginx):
 ```bash
 docker compose up --build

@@ -52,6 +52,8 @@ export const MachineRegistry: React.FC<MachineRegistryProps> = ({ onSelectUpload
       setShowCreateModal(false);
       setAssetTag('');
       setName('');
+      setManufacturer('');
+      setModelNumber('');
       loadData();
     } catch (err: any) {
       setFormError(err.message || 'Failed to create machine.');
@@ -60,8 +62,27 @@ export const MachineRegistry: React.FC<MachineRegistryProps> = ({ onSelectUpload
 
   const handleArchive = async (id: string) => {
     if (confirm('Archive this machine? Archived machines reject new datasets (AC-MM-2).')) {
-      await api.machines.archive(id);
-      loadData();
+      try {
+        await api.machines.archive(id);
+        loadData();
+      } catch (err: any) {
+        alert(err?.message || 'Failed to archive machine.');
+      }
+    }
+  };
+
+  // onViewAnalysis was accepted but never used, so past results could not be opened from the UI.
+  const handleViewLatest = async (id: string) => {
+    try {
+      const results = await api.analyses.getMachineAnalyses(id);
+      const latest = results.find((r) => r.is_latest) ?? results[0];
+      if (latest) {
+        onViewAnalysis(latest.id);
+      } else {
+        alert('No analysis results exist for this machine yet. Upload a dataset to run one.');
+      }
+    } catch (err: any) {
+      alert(err?.message || 'Failed to load analysis results.');
     }
   };
 
@@ -123,6 +144,12 @@ export const MachineRegistry: React.FC<MachineRegistryProps> = ({ onSelectUpload
                       )}
                     </td>
                     <td className="px-5 py-3 text-right space-x-2">
+                      <button
+                        onClick={() => handleViewLatest(m.id)}
+                        className="text-slate-300 hover:text-white border border-slate-600/60 px-3 py-1 rounded text-[11px] font-semibold transition-colors inline-flex items-center gap-1"
+                      >
+                        <Activity className="w-3.5 h-3.5" /> Latest Result
+                      </button>
                       {!m.archived_at && (
                         <button
                           onClick={() => onSelectUpload(m.id)}

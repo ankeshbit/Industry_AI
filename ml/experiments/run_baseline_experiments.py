@@ -9,6 +9,7 @@ Saves model artifacts, evaluation plots, and metrics, and updates ML_EXPERIMENT_
 import json
 import time
 import sys
+from datetime import date
 from pathlib import Path
 
 # Add project root to sys.path so 'ml.*' modules are importable
@@ -256,6 +257,7 @@ def update_experiment_log(all_results, log_path):
     """Updates ML_EXPERIMENT_LOG.md with the 8 baseline experiments."""
     with open(log_path, "r", encoding="utf-8") as f:
         existing_content = f.read()
+    run_date = date.today().isoformat()
 
     # Build the summary table
     table_rows = []
@@ -263,7 +265,7 @@ def update_experiment_log(all_results, log_path):
         m_test = res["test_metrics"]
         cost_str = f"${m_test['total_operational_cost']:,.0f}"
         row = (
-            f"| **{exp_id}** | 2026-11-10 | ML Engineer | "
+            f"| **{exp_id}** | {run_date} | ML Engineer | "
             f"{res['model_name']} (Config {res['configuration']}) | "
             f"{res['configuration_label']} | "
             f"{m_test['pr_auc']:.4f} | "
@@ -289,8 +291,10 @@ def update_experiment_log(all_results, log_path):
         m_train = res["train_metrics"]
         cost_str = f"${m_test['total_operational_cost']:,.0f}"
         art_path = res['artifact_path'].replace('\\', '/')
+        n_test = m_test['true_negatives'] + m_test['false_positives'] + m_test['false_negatives'] + m_test['true_positives']
+        n_fail = m_test['true_positives'] + m_test['false_negatives']
         sec = f"""### {exp_id}: {res['model_name']} (Configuration {res['configuration']})
-- **Date:** 2026-11-10
+- **Date:** {run_date}
 - **Author:** Senior ML Engineer
 - **Milestone:** Stage 2B Baseline Benchmarking
 - **Status:** Completed (Baseline Reference)
@@ -316,13 +320,21 @@ def update_experiment_log(all_results, log_path):
 | **Fit Duration** | {m_test['execution_time_sec']:.3f}s | — |
 
 #### Analytical Observations:
-- **Confusion Matrix (Test):** TN={m_test['true_negatives']}, FP={m_test['false_positives']}, FN={m_test['false_negatives']}, TP={m_test['true_positives']} out of 2,000 holdout components (68 true failures).
-- **Failure Recall:** Caught {m_test['true_positives']} out of 68 failures ({m_test['recall']*100:.1f}%), leaving {m_test['false_negatives']} unpredicted catastrophic breakdowns.
+- **Confusion Matrix (Test):** TN={m_test['true_negatives']}, FP={m_test['false_positives']}, FN={m_test['false_negatives']}, TP={m_test['true_positives']} out of {n_test:,} holdout components ({n_fail} true failures).
+- **Failure Recall:** Caught {m_test['true_positives']} out of {n_fail} failures ({m_test['recall']*100:.1f}%), leaving {m_test['false_negatives']} unpredicted catastrophic breakdowns.
 - **Cost Analysis:** Total cost penalty = ${m_test['total_operational_cost']:,.0f} ($10k per FN + $200 per FP).
 """
         detailed_sections.append(sec)
 
-    new_content = existing_content + "\n\n" + summary_section + "".join(detailed_sections)
+    begin, end = "<!-- BEGIN: STAGE_2B_GENERATED -->", "<!-- END: STAGE_2B_GENERATED -->"
+    generated = begin + "\n" + summary_section + "".join(detailed_sections) + "\n" + end
+    if begin in existing_content and end in existing_content:
+        # Re-runs replace the previously generated block instead of appending duplicates
+        head = existing_content.split(begin)[0].rstrip("\n")
+        tail = existing_content.split(end, 1)[1]
+        new_content = head + "\n\n" + generated + tail
+    else:
+        new_content = existing_content.rstrip("\n") + "\n\n" + generated + "\n"
     with open(log_path, "w", encoding="utf-8") as f:
         f.write(new_content)
     print(f"Updated {log_path} with all 8 experiment records.")

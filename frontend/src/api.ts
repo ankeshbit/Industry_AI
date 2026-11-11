@@ -2,7 +2,8 @@
  * API Client for INDUSTRIA AI Backend (PRD v1.2 §13)
  */
 
-const BASE_URL = '/api/v1';
+// .env.example documents VITE_API_BASE_URL, but it was never read; default keeps the dev proxy / nginx setup working
+const BASE_URL: string = (import.meta.env.VITE_API_BASE_URL as string | undefined) || '/api/v1';
 
 export interface User {
   id: string;
@@ -90,7 +91,7 @@ export interface AnalysisResult {
   };
   semantics: string;
   evaluation_sections: {
-    reference_dataset_evaluation: { model_card_uri: string };
+    reference_dataset_evaluation: { model_card_uri: string | null };
     customer_specific_validation: null;
   };
   summary: {
@@ -109,6 +110,7 @@ export interface AnalysisResult {
   };
   limitations: string[];
   explanation_disclaimer: string;
+  advisory_notice?: string;
   created_at: string;
 }
 

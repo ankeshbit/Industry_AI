@@ -164,3 +164,43 @@ def test_deactivated_user_cannot_refresh(client, tenant_fixture, db_session):
     # token must not have been rotated/revoked as a side effect
     rf_id = token.split(":", 1)[0]
     assert db_session.query(RefreshToken).filter(RefreshToken.id == rf_id).first().revoked_at is None
+
+
+def test_suggestions_match_sample_file_headers(client, tenant_fixture):
+    """Headers from the authoritative sample CSVs (e.g. 'Ambient Temp [C]') got no suggestions at all."""
+    csv = (
+        "Ambient Temp [C],Process Chamber Temp [C],Spindle RPM,Drive Torque [Nm],Cumulative Tool Wear [min]\n"
+        "25.0,35.5,1550,42.5,15\n"
+    )
+    _, _, vid = create_machine_and_dataset(client, tenant_fixture, csv_content=csv, name="Sample Headers DS")
+    sug = client.get(
+        f"/api/v1/dataset-versions/{vid}/mappings/ai4i_failure_no_type/suggestions", headers=tenant_fixture["headers"]
+    ).json()["suggestions"]
+    assert sug["air_temperature"] == {"column": "Ambient Temp [C]", "unit": "degC", "suggested": True, "confirmed": False}
+    assert sug["process_temperature"]["column"] == "Process Chamber Temp [C]"
+    assert sug["rotational_speed"]["column"] == "Spindle RPM"
+    assert sug["torque"]["column"] == "Drive Torque [Nm]"
+    assert sug["tool_wear"]["column"] == "Cumulative Tool Wear [min]"
+
+
+def test_product_type_on_no_type_profile_error_code(client, tenant_fixture):
+    """PRD §13.4: product_type on any other profile -> E_FEATURE_NOT_IN_PROFILE (was E_FORBIDDEN_FEATURE)."""
+    _, _, vid = create_machine_and_dataset(client, tenant_fixture, name="PT DS")
+    resp = client.put(
+        f"/api/v1/dataset-versions/{vid}/mappings/ai4i_failure_no_type",
+        json={"mappings": {"product_type": {"column": "RPM", "asserted_equivalence": True}}},
+        headers=tenant_fixture["headers"],
+    )
+    assert resp.status_code == 422
+    assert resp.json()["error"]["code"] == "E_FEATURE_NOT_IN_PROFILE"
+
+
+@needs_models
+def test_analysis_result_carries_standing_advisory(client, tenant_fixture):
+    """PRD §14.2: the standing advisory must accompany every API result (it was UI-only and abbreviated)."""
+    _, _, vid = create_machine_and_dataset(client, tenant_fixture, name="Advisory DS")
+    map_valid_features(client, tenant_fixture, vid)
+    _, resp = _run_analysis(client, tenant_fixture, vid)
+    res = client.get(f"/api/v1/analyses/{resp.json()['analysis_result_id']}", headers=tenant_fixture["headers"]).json()
+    assert "has not been validated on your specific equipment" in res["advisory_notice"]
+    assert res["trust"]["compatibility"] in ("COMPATIBLE", "COMPATIBLE_WITH_WARNINGS")

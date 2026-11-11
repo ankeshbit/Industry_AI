@@ -1,0 +1,16 @@
+# Keep host-built / platform-specific artefacts out of the Docker build context.
+# (A host node_modules copied over the container's npm install breaks `npm run build`.)
+.git
+.venv
+venv
+**/node_modules
+frontend/dist
+**/__pycache__
+**/*.pyc
+.pytest_cache
+storage
+*.db
+.env
+.env.*
+!.env.example
+ml/datasets/raw

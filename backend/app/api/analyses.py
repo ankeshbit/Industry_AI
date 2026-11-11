@@ -22,6 +22,15 @@ from backend.app.services.inference_service import execute_analysis
 
 router = APIRouter(tags=["Analyses"])
 
+# Standing advisory mandated by PRD v1.2 §14.2: must accompany every prediction result (UI and API).
+STANDING_ADVISORY = (
+    "This analysis was produced using a reference model trained on the AI4I 2020 Predictive Maintenance Dataset. "
+    "It reflects machine tool operating patterns from that reference dataset and has not been validated on your "
+    "specific equipment or operating conditions. Predictions must be treated as advisory inputs to human "
+    "maintenance decisions, not as definitive health assessments. The operator assumes full responsibility for "
+    "maintenance decisions."
+)
+
 class CreateAnalysisRequest(BaseModel):
     compatibility_check_id: str
     acknowledged_reason_codes: List[str] = Field(default_factory=list)
@@ -80,6 +89,7 @@ def format_analysis_result(res: AnalysisResult, db: Session) -> Dict[str, Any]:
         "ood_summary": res.ood_summary,
         "limitations": res.limitations,
         "explanation_disclaimer": "Feature attributions describe model behaviour, not physical causation.",
+        "advisory_notice": STANDING_ADVISORY,
         "created_at": res.created_at.isoformat()
     }
 

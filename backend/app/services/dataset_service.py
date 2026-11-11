@@ -28,26 +28,35 @@ from backend.app.models.usage import UsageEvent
 SYNONYMS = {
     "air_temperature": [
         "air temperature", "air temp", "air temperature [k]", "air temp [k]",
-        "air temperature [c]", "air temp [c]", "air_temp", "air_temperature"
+        "air temperature [c]", "air temp [c]", "air_temp", "air_temperature",
+        "ambient temp", "ambient temperature", "ambient"
     ],
     "process_temperature": [
         "process temperature", "process temp", "proc temp", "process temperature [k]",
-        "process temp [k]", "process temp [c]", "proc_temp", "process_temperature"
+        "process temp [k]", "process temp [c]", "proc_temp", "process_temperature",
+        "process chamber temp", "process chamber temperature", "chamber temp"
     ],
     "rotational_speed": [
         "rotational speed", "speed", "rotational speed [rpm]", "rpm",
-        "motor speed", "spindle speed", "rotational_speed"
+        "motor speed", "spindle speed", "spindle rpm", "rotational_speed"
     ],
     "torque": [
-        "torque", "torque [nm]", "spindle torque", "motor torque"
+        "torque", "torque [nm]", "spindle torque", "motor torque", "drive torque"
     ],
     "tool_wear": [
-        "tool wear", "tool wear [min]", "tool_wear", "wear", "tool life"
+        "tool wear", "tool wear [min]", "tool_wear", "wear", "tool life",
+        "cumulative tool wear"
     ],
     "product_type": [
         "type", "product type", "product_type", "quality variant"
     ]
 }
+
+def _normalize_header(text: str) -> str:
+    """Lower-case, drop bracketed unit suffixes (e.g. '[C]') and collapse separators."""
+    no_unit = re.sub(r"\[[^\]]*\]", " ", str(text).lower())
+    return re.sub(r"[_\-\s]+", " ", no_unit).strip()
+
 
 FORBIDDEN_COLUMNS = {
     "machine_failure", "machine failure", "twf", "hdf", "pwf", "osf", "rnf",
@@ -469,14 +478,13 @@ def generate_column_suggestions(
     suggestions = {}
     for feat in required_features:
         feat_name = feat["name"]
-        syns = SYNONYMS.get(feat_name, [feat_name.lower()])
+        syns = {_normalize_header(s) for s in SYNONYMS.get(feat_name, [feat_name.lower()])}
         matched_col = None
         inferred_unit = feat.get("unit_canonical", None)
 
         for col in columns:
-            normalized = re.sub(r"[_\-\s]+", " ", col.lower()).strip()
-            # Exact or synonym match
-            if normalized in syns or any(s == normalized for s in syns):
+            # Exact or synonym match (units in brackets are ignored for matching, but used below)
+            if _normalize_header(col) in syns:
                 matched_col = col
                 # Detect unit from column name brackets
                 if "[" in col and "]" in col:
@@ -536,6 +544,12 @@ def save_column_mapping(
     required_features = {f["name"]: f for f in doc.get("required_features", [])}
     forbidden_features = [f.lower().replace(" ", "_") for f in doc.get("forbidden_features", [])]
     all_forbidden = set(forbidden_features) | {f.lower().replace(" ", "_") for f in FORBIDDEN_COLUMNS}
+
+    if "product_type" in mappings and profile.configuration != "WITH_TYPE":
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail={"error": {"code": "E_FEATURE_NOT_IN_PROFILE", "message": f"Feature 'product_type' is not supported in profile '{profile_id}'."}}
+        )
 
     # AC-CE-7: Reject if forbidden feature mapped as model input
     for canonical_name, spec in mappings.items():
