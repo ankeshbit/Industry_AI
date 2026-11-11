@@ -258,9 +258,15 @@ def rotate_refresh_token(db: Session, token_string: str) -> dict:
             detail={"error": {"code": "INVALID_TOKEN", "message": "Invalid refresh token."}}
         )
 
+    user = rf.user
+    if not user or not user.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail={"error": {"code": "UNAUTHENTICATED", "message": "User not found or inactive."}}
+        )
+
     # Revoke current token
     rf.revoked_at = datetime.utcnow()
-    user = rf.user
 
     # Issue new token in same family
     new_token_str = create_refresh_token(db, user, family_id=rf.family_id)
@@ -272,42 +278,3 @@ def rotate_refresh_token(db: Session, token_string: str) -> dict:
         "expires_in": expires_in,
         "refresh_token": new_token_str
     }
-
-def get_current_user_and_tenant(
-    credentials: Optional[HTTPAuthorizationCredentials] = Depends(security),
-    db: Session = Depends(lambda: None) # overridden in dependency injection
-) -> Tuple[User, Organisation]:
-    """
-    Extracts and validates JWT, ensuring strict tenant context binding (PRD v1.2 §8.1).
-    """
-    if not credentials or not credentials.credentials:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail={"error": {"code": "UNAUTHENTICATED", "message": "Missing bearer authentication token."}}
-        )
-
-    token = credentials.credentials
-    try:
-        payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
-        user_id = payload.get("sub")
-        org_id = payload.get("org_id")
-    except jwt.ExpiredSignatureError:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail={"error": {"code": "TOKEN_EXPIRED", "message": "Access token has expired."}}
-        )
-    except jwt.PyJWTError:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail={"error": {"code": "INVALID_TOKEN", "message": "Invalid access token."}}
-        )
-
-    user = db.query(User).filter(User.id == user_id, User.organisation_id == org_id).first()
-    if not user or not user.is_active:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail={"error": {"code": "UNAUTHENTICATED", "message": "User not found or inactive."}}
-        )
-
-    return user, user.organisation
-

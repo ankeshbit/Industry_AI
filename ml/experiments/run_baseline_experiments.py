@@ -52,12 +52,12 @@ def run_all_baseline_experiments():
     print("=" * 70)
 
     # 1. Load Dataset
-    print("\\n[Step 1] Loading and verifying raw AI4I dataset...")
+    print("\n[Step 1] Loading and verifying raw AI4I dataset...")
     df = load_ai4i_dataset(verify_checksum=True)
     print(f"Dataset successfully loaded. Shape: {df.shape}")
 
     # 2. Stratified Split (80% Train, 20% Holdout Test)
-    print("\\n[Step 2] Generating reproducible stratified train/test split...")
+    print("\n[Step 2] Generating reproducible stratified train/test split...")
     split_path = artifacts_dir / "split_indices.json"
     train_idx, test_idx, split_meta = generate_stratified_split(
         df=df,
@@ -89,7 +89,7 @@ def run_all_baseline_experiments():
     exp_counter = 1
 
     for config_key, config_name, feature_list, start_exp, end_exp in configs:
-        print(f"\\n{'=' * 70}")
+        print(f"\n{'=' * 70}")
         print(f"RUNNING CONFIGURATION {config_key}: {config_name.upper()}")
         print(f"Features: {feature_list}")
         print("=" * 70)
@@ -104,7 +104,7 @@ def run_all_baseline_experiments():
 
         for model_name, model_obj in models.items():
             exp_id = f"EXP-{exp_counter:03d}"
-            print(f"\\n--- [{exp_id}] {model_name} (Config {config_key}) ---")
+            print(f"\n--- [{exp_id}] {model_name} (Config {config_key}) ---")
 
             # Build pipeline
             pipeline = build_pipeline_for_model(model_name, model_obj, configuration=config_key)
@@ -177,17 +177,17 @@ def run_all_baseline_experiments():
     results_json_path = artifacts_dir / "baseline_results.json"
     with open(results_json_path, "w", encoding="utf-8") as f:
         json.dump(all_results, f, indent=2)
-    print(f"\\nAll experiment metrics serialized to: {results_json_path}")
+    print(f"\nAll experiment metrics serialized to: {results_json_path}")
 
     # Generate Combined Comparison Plots
-    print("\\n[Step 3] Generating multi-model PR & ROC comparison curves...")
+    print("\n[Step 3] Generating multi-model PR & ROC comparison curves...")
     generate_comparison_plots(curve_data, plots_dir)
 
     # Generate ML_EXPERIMENT_LOG.md markdown update
-    print("\\n[Step 4] Generating experiment log markdown...")
+    print("\n[Step 4] Generating experiment log markdown...")
     update_experiment_log(all_results, project_root / "docs" / "ML_EXPERIMENT_LOG.md")
 
-    print("\\n" + "=" * 70)
+    print("\n" + "=" * 70)
     print("STAGE 2B BASELINE EXPERIMENTS COMPLETED SUCCESSFULLY!")
     print("=" * 70)
     return all_results

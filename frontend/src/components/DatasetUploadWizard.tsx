@@ -43,11 +43,16 @@ export const DatasetUploadWizard: React.FC<DatasetUploadWizardProps> = ({ machin
 
     try {
       // 1. Create dataset
-      const ds = await api.datasets.createForMachine(machineId, { name: datasetName });
-      setDatasetId(ds.id);
+      // Reuse the dataset if a previous attempt already created it (otherwise a retry fails with 409 DUPLICATE_DATASET_NAME)
+      let dsId = datasetId;
+      if (!dsId) {
+        const ds = await api.datasets.createForMachine(machineId, { name: datasetName });
+        dsId = ds.id;
+        setDatasetId(ds.id);
+      }
 
       // 2. Upload file
-      const up = await api.datasets.upload(ds.id, file);
+      const up = await api.datasets.upload(dsId, file);
       setVersionId(up.dataset_version_id);
       setQualityScore(up.quality_score);
 
@@ -56,7 +61,9 @@ export const DatasetUploadWizard: React.FC<DatasetUploadWizardProps> = ({ machin
       const cols = vDetails.columns.map((c: any) => c.name);
       setColumns(cols);
 
-      const sug = await api.datasets.getSuggestions(up.dataset_version_id, profileId);
+      // Ask for suggestions against the WITH_TYPE profile (a superset of NO_TYPE) so a Type column can be detected;
+      // the NO_TYPE profile never lists product_type, so the auto-switch below could not trigger before.
+      const sug = await api.datasets.getSuggestions(up.dataset_version_id, 'ai4i_failure_with_type');
       const s = sug.suggestions;
       if (s.air_temperature) { setAirTempCol(s.air_temperature.column); if (s.air_temperature.unit) setAirTempUnit(s.air_temperature.unit); }
       if (s.process_temperature) { setProcTempCol(s.process_temperature.column); if (s.process_temperature.unit) setProcTempUnit(s.process_temperature.unit); }

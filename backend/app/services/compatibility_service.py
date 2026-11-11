@@ -78,7 +78,13 @@ def evaluate_compatibility(
 
     # Fetch mapping
     if mapping_id:
-        mapping_record = db.query(ColumnMapping).filter(ColumnMapping.id == mapping_id).first()
+        mapping_record = db.query(ColumnMapping).filter(
+            ColumnMapping.id == mapping_id,
+            ColumnMapping.organisation_id == org_id,
+            ColumnMapping.dataset_version_id == dataset_version_id
+        ).first()
+        if not mapping_record:
+            raise HTTPException(status_code=404, detail="Column mapping not found.")
     else:
         mapping_record = db.query(ColumnMapping).filter(
             ColumnMapping.dataset_version_id == dataset_version_id,
@@ -196,8 +202,15 @@ def evaluate_compatibility(
     # Status Precedence (PRD §8.4.2 line 989, AC-CE-2):
     # UNSUPPORTED_FORMAT > INCOMPATIBLE > INSUFFICIENT_DATA > COMPATIBLE_WITH_WARNINGS > COMPATIBLE
     has_unsupported = any(r["code"] == "UNSUPPORTED_FORMAT" for r in reasons)
-    has_incompatible = any(r["severity"] == "ERROR" and r["code"] != "UNSUPPORTED_FORMAT" and "INSUFFICIENT" not in r["code"] for r in reasons)
-    has_insufficient = any("INSUFFICIENT" in r["code"] or r["code"] == "E_EMPTY_DATASET" for r in reasons)
+    insufficient_codes = ("E_EMPTY_DATASET",)
+    has_incompatible = any(
+        r["severity"] == "ERROR"
+        and r["code"] != "UNSUPPORTED_FORMAT"
+        and "INSUFFICIENT" not in r["code"]
+        and r["code"] not in insufficient_codes
+        for r in reasons
+    )
+    has_insufficient = any("INSUFFICIENT" in r["code"] or r["code"] in insufficient_codes for r in reasons)
     has_warnings = any(r["severity"] == "WARNING" for r in reasons)
 
     if has_unsupported:

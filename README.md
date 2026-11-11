@@ -114,7 +114,7 @@ cd frontend
 npm install
 npm run dev
 ```
-*The React SPA will be accessible at `http://localhost:5173`.*
+*The React SPA will be accessible at `http://localhost:3000` (port set in `vite.config.ts`; `/api` is proxied to the backend on port 8000).*
 
 ---
 

@@ -9,7 +9,8 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request, status
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.exceptions import RequestValidationError, HTTPException
+from fastapi.exceptions import RequestValidationError
+from starlette.exceptions import HTTPException  # base class: also catches routing 404/405
 
 from backend.app.config import settings
 from backend.app.database import engine, Base, SessionLocal
@@ -44,7 +45,7 @@ app = FastAPI(
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
-    allow_credentials=True,
+    allow_credentials=False,  # auth uses Bearer headers, not cookies; wildcard origin + credentials is unsafe
     allow_methods=["*"],
     allow_headers=["*"],
 )

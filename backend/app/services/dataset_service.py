@@ -143,7 +143,7 @@ def upload_dataset_version_stream(
         )
 
     # Reject executable headers (MZ, ELF, Mach-O, scripts)
-    if file_bytes.startswith(b"MZ") or file_bytes.startswith(b"\x7fELF") or file_bytes.startswith(b"PK\x03\x04\x14\x00\x08"):
+    if file_bytes.startswith(b"MZ") or file_bytes.startswith(b"\x7fELF") or file_bytes.startswith(b"PK\x03\x04"):
         raise HTTPException(
             status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
             detail={"error": {"code": "UNSUPPORTED_FORMAT", "message": "Invalid file content: executable or non-CSV magic bytes detected."}}
@@ -171,11 +171,18 @@ def upload_dataset_version_stream(
 
     # 6. Parse CSV content to verify structure
     try:
-        df = pd.read_csv(io.BytesIO(file_bytes), nrows=settings.MAX_CSV_ROWS)
+        df = pd.read_csv(io.BytesIO(file_bytes), nrows=settings.MAX_CSV_ROWS + 1)
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
             detail={"error": {"code": "UNSUPPORTED_FORMAT", "message": f"Malformed CSV file: {str(e)}"}}
+        )
+
+    # Do not silently truncate: later stages re-read the whole stored file
+    if len(df) > settings.MAX_CSV_ROWS:
+        raise HTTPException(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            detail={"error": {"code": "PAYLOAD_TOO_LARGE", "message": f"Dataset exceeds the maximum of {settings.MAX_CSV_ROWS} rows."}}
         )
 
     if df.empty or len(df.columns) == 0:
@@ -300,7 +307,10 @@ def compute_quality_score_and_report(
     # Resolve mapping if available
     mapping_obj = None
     if mapping_id:
-        mapping_obj = db.query(ColumnMapping).filter(ColumnMapping.id == mapping_id).first()
+        mapping_obj = db.query(ColumnMapping).filter(
+            ColumnMapping.id == mapping_id,
+            ColumnMapping.organisation_id == dv.organisation_id
+        ).first()
     elif profile_id:
         mapping_obj = db.query(ColumnMapping).filter(
             ColumnMapping.dataset_version_id == dataset_version_id,

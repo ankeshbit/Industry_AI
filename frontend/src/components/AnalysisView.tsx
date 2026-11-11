@@ -12,6 +12,7 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({ resultId, onBack }) 
   const [result, setResult] = useState<AnalysisResult | null>(null);
   const [rows, setRows] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     async function load() {
@@ -22,14 +23,24 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({ resultId, onBack }) 
         ]);
         setResult(res);
         setRows(rowsData.top_rows);
-      } catch (e) {
+      } catch (e: any) {
         console.error(e);
+        setError(e?.message || 'Failed to load analysis results.');
       } finally {
         setLoading(false);
       }
     }
     load();
   }, [resultId]);
+
+  if (error) {
+    return (
+      <div className="p-8 text-center text-rose-300 text-sm space-y-3">
+        <div>{error}</div>
+        <button onClick={onBack} className="text-xs text-slate-400 hover:text-white underline">Back to Machine Registry</button>
+      </div>
+    );
+  }
 
   if (loading || !result) {
     return (
@@ -157,11 +168,11 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({ resultId, onBack }) 
                         <span className="text-slate-400 text-[11px]">IN RANGE</span>
                       )}
                     </td>
-                    <td className="px-4 py-2.5 text-slate-300">{f['Air temperature [K]'] || '-'}</td>
-                    <td className="px-4 py-2.5 text-slate-300">{f['Process temperature [K]'] || '-'}</td>
-                    <td className="px-4 py-2.5 text-slate-300">{f['Rotational speed [rpm]'] || '-'}</td>
-                    <td className="px-4 py-2.5 text-slate-300">{f['Torque [Nm]'] || '-'}</td>
-                    <td className="px-4 py-2.5 text-slate-300">{f['Tool wear [min]'] || '-'}</td>
+                    <td className="px-4 py-2.5 text-slate-300">{f['Air temperature [K]'] ?? '-'}</td>
+                    <td className="px-4 py-2.5 text-slate-300">{f['Process temperature [K]'] ?? '-'}</td>
+                    <td className="px-4 py-2.5 text-slate-300">{f['Rotational speed [rpm]'] ?? '-'}</td>
+                    <td className="px-4 py-2.5 text-slate-300">{f['Torque [Nm]'] ?? '-'}</td>
+                    <td className="px-4 py-2.5 text-slate-300">{f['Tool wear [min]'] ?? '-'}</td>
                   </tr>
                 );
               })}

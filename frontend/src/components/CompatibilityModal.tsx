@@ -38,6 +38,9 @@ export const CompatibilityModal: React.FC<CompatibilityModalProps> = ({ check, o
       if (runRes.analysis_result_id) {
         const fullResult = await api.analyses.get(runRes.analysis_result_id);
         onAnalysisStarted(fullResult);
+      } else {
+        // Job did not produce a result (e.g. RETRY_WAIT / FAILED): tell the user instead of silently doing nothing
+        setError(`Analysis did not complete (job status: ${runRes.status}). Please check the job and try again.`);
       }
     } catch (err: any) {
       setError(err.message || 'Failed to start analysis.');
@@ -71,7 +74,7 @@ export const CompatibilityModal: React.FC<CompatibilityModalProps> = ({ check, o
           <div className="bg-slate-800/80 p-3 rounded-xl border border-slate-700/60">
             <span className="text-slate-400 uppercase font-semibold">Stage 1: Status</span>
             <div className="text-sm font-bold text-slate-200 mt-1 flex items-center gap-1.5">
-              {check.compatibility.status.includes('COMPATIBLE') ? (
+              {(check.compatibility.status === 'COMPATIBLE' || check.compatibility.status === 'COMPATIBLE_WITH_WARNINGS') ? (
                 <CheckCircle2 className="w-4 h-4 text-emerald-400" />
               ) : (
                 <XCircle className="w-4 h-4 text-rose-400" />

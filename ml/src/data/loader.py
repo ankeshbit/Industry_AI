@@ -56,9 +56,9 @@ def load_ai4i_dataset(
         actual_hash = compute_file_checksum(filepath)
         if actual_hash != AI4I_SHA256_CHECKSUM:
             raise ValueError(
-                f"Checksum mismatch for '{filepath}'.\\n"
-                f"Expected: {AI4I_SHA256_CHECKSUM}\\n"
-                f"Got:      {actual_hash}\\n"
+                f"Checksum mismatch for '{filepath}'.\n"
+                f"Expected: {AI4I_SHA256_CHECKSUM}\n"
+                f"Got:      {actual_hash}\n"
                 "The dataset may be corrupt or altered."
             )
 
