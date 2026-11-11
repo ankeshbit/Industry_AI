@@ -65,13 +65,13 @@ def extract_model_summary(exp_data: Dict[str, Any]) -> Dict[str, Any]:
     cost_vals = [f["outer_test_metrics"]["operational_metrics"]["total_operational_cost"] for f in folds]
     tau_vals = [f["threshold_optimization"]["optimal_threshold"] for f in folds]
 
-    tp_vals = [f["outer_test_metrics"]["classification_metrics"]["true_positives"] for f in folds]
-    fp_vals = [f["outer_test_metrics"]["classification_metrics"]["false_positives"] for f in folds]
-    fn_vals = [f["outer_test_metrics"]["classification_metrics"]["false_negatives"] for f in folds]
-    tn_vals = [f["outer_test_metrics"]["classification_metrics"]["true_negatives"] for f in folds]
-    prec_vals = [f["outer_test_metrics"]["classification_metrics"]["precision"] for f in folds]
-    rec_vals = [f["outer_test_metrics"]["classification_metrics"]["recall"] for f in folds]
-    f1_vals = [f["outer_test_metrics"]["classification_metrics"]["f1_score"] for f in folds]
+    tp_vals = [f["outer_test_metrics"]["operational_metrics"]["true_positives"] for f in folds]
+    fp_vals = [f["outer_test_metrics"]["operational_metrics"]["false_positives"] for f in folds]
+    fn_vals = [f["outer_test_metrics"]["operational_metrics"]["false_negatives"] for f in folds]
+    tn_vals = [f["outer_test_metrics"]["operational_metrics"]["true_negatives"] for f in folds]
+    prec_vals = [f["outer_test_metrics"]["operational_metrics"]["precision"] for f in folds]
+    rec_vals = [f["outer_test_metrics"]["operational_metrics"]["recall"] for f in folds]
+    f1_vals = [f["outer_test_metrics"]["operational_metrics"]["f1_score"] for f in folds]
 
     w_vals = [f["calibration_diagnostics"].get("w", 1.0) for f in folds]
     c_vals = [f["calibration_diagnostics"].get("c", 0.0) for f in folds]
@@ -288,3 +288,4 @@ def compile_full_evaluation_report() -> Dict[str, Any]:
 
 if __name__ == "__main__":
     compile_full_evaluation_report()
+

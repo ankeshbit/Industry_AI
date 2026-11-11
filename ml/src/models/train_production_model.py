@@ -162,42 +162,21 @@ def train_and_package_production_model(
 
     # 4. Pipeline Construction and Fitting
     if family_upper == "M2":
-        if config_upper == "A":
-            default_params = {
-                "max_depth": 4,
-                "learning_rate": 0.1,
-                "subsample": 0.7,
-                "colsample_bytree": 1.0,
-                "min_child_weight": 1,
-                "tree_method": "hist",
-                "random_state": 42,
-                "n_jobs": -1,
-                "n_estimators": 80,
-            }
-        else:
-            default_params = {
-                "max_depth": 6,
-                "learning_rate": 0.05,
-                "subsample": 0.8,
-                "colsample_bytree": 0.8,
-                "min_child_weight": 5,
-                "tree_method": "hist",
-                "random_state": 42,
-                "n_jobs": -1,
-                "n_estimators": 89,
-            }
+        default_params = {
+            "n_estimators": 100,
+            "max_depth": 5,
+            "learning_rate": 0.05,
+            "subsample": 0.8,
+            "colsample_bytree": 0.8,
+            "min_child_weight": 3,
+            "tree_method": "hist",
+            "eval_metric": "aucpr",
+            "random_state": 42,
+            "n_jobs": -1,
+        }
         if hyperparameters:
             default_params.update(hyperparameters)
-        n_est = int(default_params.pop("n_estimators", 80))
-        n_pos = int(np.sum(y_sub == 1))
-        n_neg = int(np.sum(y_sub == 0))
-        spw = float(n_neg / max(1, n_pos))
-        pipeline = build_m2_pipeline(
-            params=default_params,
-            scale_pos_weight=spw,
-            n_estimators=n_est,
-            configuration=config_upper,
-        )
+        pipeline = build_m2_pipeline(params=default_params, configuration=config_upper)
     elif family_upper == "M1":
         default_params = {
             "n_estimators": 100,
@@ -234,7 +213,7 @@ def train_and_package_production_model(
     threshold_opt = ThresholdOptimizer(cost_fn=10000.0, cost_fp=200.0)
     threshold_opt.optimize(y_val=y_th, y_prob_val=prob_th)
     optimal_tau = threshold_opt.optimal_threshold_
-    print(f"  Optimal Operating Threshold: tau* = {optimal_tau:.4f} (Bayes theoretical = {threshold_opt.tau_bayes_:.5f})")
+    print(f"  Optimal Operating Threshold: tau* = {optimal_tau:.4f} (Bayes theoretical = {threshold_opt.bayes_threshold_:.5f})")
 
     # 7. Single Evaluation on Locked Historical Benchmark Test Set (N = 2,000)
     print(f"Evaluating frozen bundle on Historical Benchmark Test partition (N = {len(X_test)})...")
@@ -311,15 +290,7 @@ def train_and_package_production_model(
             "brier_score": bs_test,
             "brier_skill_score": bss_test,
             "operational_cost": cost_test,
-            "precision": test_metrics["operational_metrics"]["precision"],
-            "recall": test_metrics["operational_metrics"]["recall"],
-            "f1_score": test_metrics["operational_metrics"]["f1_score"],
-            "confusion_counts": {
-                "tp": test_metrics["operational_metrics"]["true_positives"],
-                "fp": test_metrics["operational_metrics"]["false_positives"],
-                "fn": test_metrics["operational_metrics"]["false_negatives"],
-                "tn": test_metrics["operational_metrics"]["true_negatives"],
-            },
+            "confusion_matrix": test_metrics["classification_metrics"]["confusion_matrix"],
         },
         "created_at": time.strftime("%Y-%m-%d %H:%M:%SZ", time.gmtime()),
     }

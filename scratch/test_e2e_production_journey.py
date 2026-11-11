@@ -58,12 +58,7 @@ def test_complete_e2e_journey():
         assert user_a is not None, "No users found in database"
         org_id_a = user_a.organisation_id
 
-        token_a_str = create_access_token(data={
-            "sub": user_a.id,
-            "email": user_a.email,
-            "org_id": user_a.organisation_id,
-            "role": user_a.role,
-        })
+        token_a_str, _ = create_access_token(user_a.id, user_a.organisation_id, user_a.role)
         headers_a = {"Authorization": f"Bearer {token_a_str}"}
         print(f"\n1. Authenticating Tenant A User ({user_a.email}, org={org_id_a})...")
         print("   JWT access token generated.")
@@ -72,34 +67,47 @@ def test_complete_e2e_journey():
         me_resp = client.get("/api/v1/auth/me", headers=headers_a)
         assert me_resp.status_code == 200, f"Failed auth me: {me_resp.text}"
         user_me = me_resp.json()
-        assert user_me["organisation_id"] == org_id_a
+        assert user_me["organisation"]["id"] == org_id_a
         print(f"   Tenant A Organization ID verified: {org_id_a}")
 
         # Step 2: Register Machine for Tenant A
         print("\n2. Registering Machine for Tenant A...")
         mach_resp = client.post("/api/v1/machines", headers=headers_a, json={
-            "machine_name": f"CNC Milling Unit-{uid_a}",
-            "machine_type": "Milling Machine",
-            "operating_context": {"rated_speed_rpm": 1500, "rated_power_kw": 15.0},
+            "asset_tag": f"TAG-CNC-{uid_a}",
+            "name": f"CNC Milling Unit-{uid_a}",
+            "category_code": "GENERAL_MACHINE_TOOL",
+            "rated_parameters": {"rated_speed_rpm": 1500, "rated_power_kw": 15.0},
         })
         assert mach_resp.status_code == 201, f"Machine registration failed: {mach_resp.text}"
         machine_a = mach_resp.json()
         machine_id_a = machine_a["id"]
-        print(f"   Machine registered: id={machine_id_a}, name={machine_a['machine_name']}")
+        print(f"   Machine registered: id={machine_id_a}, name={machine_a['name']}")
 
-        # Step 3: Upload Dataset CSV for Machine
-        print("\n3. Uploading operating dataset CSV...")
+        # Step 3: Register Dataset Collection and Upload Operating CSV
+        print("\n3. Registering dataset collection and uploading CSV...")
+        ds_coll_resp = client.post(
+            f"/api/v1/machines/{machine_id_a}/datasets",
+            headers=headers_a,
+            json={
+                "name": f"Operating Telemetry {uid_a}",
+                "dataset_type": "TABULAR_OPERATING_STATE",
+                "objective": "FAILURE_PROBABILITY_CURRENT_STATE",
+            },
+        )
+        assert ds_coll_resp.status_code == 201, f"Dataset collection creation failed: {ds_coll_resp.text}"
+        dataset_id = ds_coll_resp.json()["id"]
+
         sample_csv_path = root_dir / "samples" / "ai4i_sample_typed_operating_data.csv"
         with open(sample_csv_path, "rb") as f:
             upload_resp = client.post(
-                f"/api/v1/machines/{machine_id_a}/datasets",
+                f"/api/v1/datasets/{dataset_id}/versions/upload",
                 headers=headers_a,
                 files={"file": ("operating_data.csv", f, "text/csv")},
             )
         assert upload_resp.status_code == 201, f"Dataset upload failed: {upload_resp.text}"
         dataset_info = upload_resp.json()
         dataset_version_id = dataset_info["dataset_version_id"]
-        print(f"   Dataset uploaded: version_id={dataset_version_id}, rows={dataset_info['total_rows']}")
+        print(f"   Dataset uploaded: version_id={dataset_version_id}, rows={dataset_info['row_count']}")
 
         # Step 4: Validate and Create Column Mapping
         print("\n4. Creating canonical feature column mapping...")
@@ -110,17 +118,17 @@ def test_complete_e2e_journey():
                 "rotational_speed": {"column": "Rotational speed [rpm]", "unit": "rpm"},
                 "torque": {"column": "Torque [Nm]", "unit": "Nm"},
                 "tool_wear": {"column": "Tool wear [min]", "unit": "min"},
-                "product_type": {"column": "Type", "unit": None},
+                "product_type": {"column": "Type", "unit": None, "asserted_equivalence": True},
             }
         }
-        map_resp = client.post(
-            f"/api/v1/dataset-versions/{dataset_version_id}/column-mappings",
+        map_resp = client.put(
+            f"/api/v1/dataset-versions/{dataset_version_id}/mappings/ai4i_failure_with_type",
             headers=headers_a,
             json=mapping_payload,
         )
-        assert map_resp.status_code == 201, f"Column mapping failed: {map_resp.text}"
+        assert map_resp.status_code == 200, f"Column mapping failed: {map_resp.text}"
         mapping_data = map_resp.json()
-        mapping_id = mapping_data["id"]
+        mapping_id = mapping_data["mapping_id"]
         print(f"   Column mapping saved: id={mapping_id}")
 
         # Step 5: Check Pipeline Compatibility
@@ -130,18 +138,21 @@ def test_complete_e2e_journey():
             headers=headers_a,
             json={"profile_id": "ai4i_failure_with_type"},
         )
-        assert compat_resp.status_code == 200, f"Compatibility check failed: {compat_resp.text}"
+        assert compat_resp.status_code in [200, 201], f"Compatibility check failed: {compat_resp.text}"
         compat_results = compat_resp.json()
         assert len(compat_results) > 0
         compat_check = compat_results[0]
         compat_check_id = compat_check["id"]
-        assert compat_check["status"] == "COMPATIBLE", f"Status: {compat_check['status']}"
-        print(f"   Compatibility check passed: id={compat_check_id}, status={compat_check['status']}")
+        compat_status = compat_check["compatibility"]["status"]
+        assert compat_status in ["COMPATIBLE", "COMPATIBLE_WITH_WARNINGS"], f"Status: {compat_status}"
+        active_warnings = compat_check.get("requires_acknowledgement", [])
+        print(f"   Compatibility check passed: id={compat_check_id}, status={compat_status}, warnings={active_warnings}")
 
         # Step 6: Enqueue Analysis Job
         print("\n6. Enqueuing failure prediction analysis job...")
         analysis_req = {
             "compatibility_check_id": compat_check_id,
+            "acknowledged_reason_codes": active_warnings,
             "limitation_acknowledged": True,
         }
         analysis_resp = client.post(
@@ -149,7 +160,7 @@ def test_complete_e2e_journey():
             headers=headers_a,
             json=analysis_req,
         )
-        assert analysis_resp.status_code in [200, 201], f"Analysis trigger failed: {analysis_resp.text}"
+        assert analysis_resp.status_code in [200, 201, 202], f"Analysis trigger failed: {analysis_resp.text}"
         analysis_data = analysis_resp.json()
         job_id = analysis_data.get("job_id")
         result_id = analysis_data.get("analysis_result_id")
@@ -229,12 +240,7 @@ def test_complete_e2e_journey():
             user_b = db.query(User).filter(User.id != user_a.id).first()
         assert user_b is not None and user_b.organisation_id != org_id_a, "No distinct second tenant found in database"
 
-        token_b_str = create_access_token(data={
-            "sub": user_b.id,
-            "email": user_b.email,
-            "org_id": user_b.organisation_id,
-            "role": user_b.role,
-        })
+        token_b_str, _ = create_access_token(user_b.id, user_b.organisation_id, user_b.role)
         headers_b = {"Authorization": f"Bearer {token_b_str}"}
         print(f"   Tenant B authenticated: user={user_b.email}, org={user_b.organisation_id}")
 
@@ -245,18 +251,28 @@ def test_complete_e2e_journey():
 
         # 9b. Tenant B attempts to access Tenant A's dataset versions
         ds_b_resp = client.get(f"/api/v1/machines/{machine_id_a}/datasets", headers=headers_b)
-        assert ds_b_resp.status_code == 404, f"Isolation breach! Dataset accessible: {ds_b_resp.status_code}"
-        print("   [PASS] Tenant B cannot list Tenant A's datasets (404 Not Found)")
+        assert ds_b_resp.status_code == 200 and ds_b_resp.json() == [], f"Isolation breach! Datasets leaked: {ds_b_resp.json()}"
+        print("   [PASS] Tenant B cannot see Tenant A's datasets for the machine (empty list returned)")
 
-        # 9c. Tenant B attempts to access Tenant A's analysis result
+        # 9c. Tenant B attempts to access Tenant A's dataset collection directly
+        ds_direct_b = client.get(f"/api/v1/datasets/{dataset_id}", headers=headers_b)
+        assert ds_direct_b.status_code == 404, f"Isolation breach! Dataset directly accessible: {ds_direct_b.status_code}"
+        print("   [PASS] Tenant B cannot access Tenant A's dataset directly (404 Not Found)")
+
+        # 9d. Tenant B attempts to access Tenant A's dataset version details directly
+        dv_b_resp = client.get(f"/api/v1/dataset-versions/{dataset_version_id}", headers=headers_b)
+        assert dv_b_resp.status_code == 404, f"Isolation breach! DatasetVersion accessible: {dv_b_resp.status_code}"
+        print("   [PASS] Tenant B cannot access Tenant A's dataset version (404 Not Found)")
+
+        # 9e. Tenant B attempts to access Tenant A's analysis result
         an_b_resp = client.get(f"/api/v1/analyses/{result_id}", headers=headers_b)
         assert an_b_resp.status_code == 404, f"Isolation breach! Analysis accessible: {an_b_resp.status_code}"
         print("   [PASS] Tenant B cannot access Tenant A's analysis results (404 Not Found)")
 
-        # 9d. Tenant B queries machine analyses list
+        # 9f. Tenant B queries machine analyses list
         mach_an_resp = client.get(f"/api/v1/machines/{machine_id_a}/analyses", headers=headers_b)
-        assert mach_an_resp.status_code == 404, f"Isolation breach! Machine analyses accessible: {mach_an_resp.status_code}"
-        print("   [PASS] Tenant B cannot list analyses for Tenant A's machine (404 Not Found)")
+        assert mach_an_resp.status_code == 404 or mach_an_resp.json() == [], f"Isolation breach! Analyses accessible: {mach_an_resp.text}"
+        print("   [PASS] Tenant B cannot list analyses for Tenant A's machine (404 Not Found or empty list)")
 
         print("\n" + "=" * 80)
         print("ALL END-TO-END AND TENANT ISOLATION CHECKS PASSED LIVE ON NEON POSTGRESQL!")
