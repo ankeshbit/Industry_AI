@@ -40,6 +40,7 @@ from ml.src.data.nested_splitting import (
 from ml.src.models.prevalence import PrevalenceBaseline
 from ml.src.models.logistic_regression import LogisticRegressionCandidateEvaluator
 from ml.src.models.random_forest import RandomForestCandidateEvaluator
+from ml.src.models.xgboost_model import XGBoostCandidateEvaluator
 from ml.src.models.calibration import ModelAgnosticCalibrator, InsufficientCalibrationEventsError
 from ml.src.evaluation.threshold_optimizer import ThresholdOptimizer, PRD_COST_FN, PRD_COST_FP
 from ml.src.evaluation.metrics import compute_stage3_metrics
@@ -165,8 +166,8 @@ class Stage3EvaluationEngine:
         family_upper = model_family.upper().strip()
         config_upper = configuration.upper().strip()
 
-        if family_upper not in ("B0", "B1", "M1"):
-            raise ValueError(f"Model family '{model_family}' not supported in Phase 2B.1. Only B0, B1, and M1 permitted.")
+        if family_upper not in ("B0", "B1", "M1", "M2"):
+            raise ValueError(f"Model family '{model_family}' not supported. Only B0, B1, M1, and M2 permitted.")
         if config_upper not in ("A", "B", "WITH_TYPE", "WITHOUT_TYPE", "NO_TYPE"):
             raise ValueError(f"Unknown configuration '{configuration}'. Must be A or B.")
 
@@ -191,6 +192,7 @@ class Stage3EvaluationEngine:
 
             for fold in rep["outer_folds"]:
                 k_idx = fold["outer_fold_index"]
+                print(f"  [Rep {r_idx}/4 Fold {k_idx}/4] Evaluating {family_upper} Config {norm_config}...", flush=True)
 
                 # 1. Defensive runtime partition assertions
                 self._verify_fold_partitions_runtime(fold, y_all)
@@ -244,6 +246,19 @@ class Stage3EvaluationEngine:
                     )
                     base_estimator = evaluator.refit_on_sub_train(X_sub, y_sub)
                     winning_params = best_params
+                    candidate_scores = evaluator.candidate_scores_
+
+                elif family_upper == "M2":
+                    evaluator = XGBoostCandidateEvaluator(configuration=norm_config)
+                    best_params, best_rounds = evaluator.evaluate_inner_candidates(
+                        X_sub_train=X_sub,
+                        y_sub_train=y_sub,
+                        inner_folds=fold["inner_folds"],
+                        sub_train_indices_map=sub_train_map,
+                    )
+                    base_estimator = evaluator.refit_on_sub_train(X_sub, y_sub)
+                    winning_params = dict(best_params)
+                    winning_params["n_estimators_fitted"] = best_rounds
                     candidate_scores = evaluator.candidate_scores_
 
                 # 3. Post-Hoc Probability Calibration on Disjoint Calibration Partition (§5.1, §5.2)

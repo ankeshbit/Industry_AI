@@ -10,11 +10,17 @@ Adheres strictly to:
 - Root PRD.md v1.2 (§10.1.3–§10.1.5, §11.1, §13.5, §18.3)
 """
 
+import sys
 import time
 import json
 from pathlib import Path
 from typing import Dict, Any, List
 import numpy as np
+
+# Ensure root directory is on sys.path
+root_dir = Path(__file__).resolve().parent.parent.parent
+if str(root_dir) not in sys.path:
+    sys.path.insert(0, str(root_dir))
 
 from ml.src.evaluation.engine import Stage3EvaluationEngine
 from ml.src.data.nested_splitting import DEFAULT_NESTED_CV_ARTIFACT_PATH
