@@ -30,6 +30,12 @@ from ml.src.models.logistic_regression import (
     build_b1_pipeline,
     B1_C_CANDIDATES,
 )
+from ml.src.models.random_forest import (
+    M1_CANDIDATES,
+    m1_tie_breaker_key,
+    build_m1_pipeline,
+    RandomForestCandidateEvaluator,
+)
 from ml.src.models.calibration import (
     PlattCalibrator,
     ModelAgnosticCalibrator,
@@ -439,4 +445,73 @@ def test_pipeline_frozen_before_outer_test(raw_dataset, nested_manifest):
 
     assert np.isclose(frozen_tau, outer_tau), "Outer test must use frozen validation threshold!"
     assert "cost_disclaimer" in f0["outer_test_metrics"]["operational_metrics"]
+
+
+# ------------------------------------------------------------------------------
+# 14. M1 Random Forest 24 Candidate Grid & Tie-Breaking
+# ------------------------------------------------------------------------------
+def test_m1_candidate_grid_and_tie_breaking():
+    """
+    Validation 14:
+    Verifies that M1 candidate grid contains exactly 24 configurations with fixed n_estimators=100,
+    and simpler-model tie-breaking prioritizes lower max_depth, higher min_samples_split, and log2 features.
+    """
+    assert len(M1_CANDIDATES) == 24
+    for c in M1_CANDIDATES:
+        assert c["n_estimators"] == 100
+        assert c["class_weight"] == "balanced"
+        assert c["random_state"] == 42
+        assert c["max_depth"] in [5, 8, 12, None]
+        assert c["min_samples_split"] in [2, 5, 10]
+        assert c["max_features"] in ["sqrt", "log2"]
+
+    # Simpler-model tie-breaker check:
+    # Candidate A: depth 5, split 10, log2 (simplest)
+    cand_a = {"max_depth": 5, "min_samples_split": 10, "max_features": "log2"}
+    # Candidate B: depth 5, split 2, sqrt (less simple)
+    cand_b = {"max_depth": 5, "min_samples_split": 2, "max_features": "sqrt"}
+    # Candidate C: depth 8, split 10, log2
+    cand_c = {"max_depth": 8, "min_samples_split": 10, "max_features": "log2"}
+    # Candidate D: depth None, split 2, sqrt (most complex)
+    cand_d = {"max_depth": None, "min_samples_split": 2, "max_features": "sqrt"}
+
+    assert m1_tie_breaker_key(cand_a) < m1_tie_breaker_key(cand_b)
+    assert m1_tie_breaker_key(cand_b) < m1_tie_breaker_key(cand_c)
+    assert m1_tie_breaker_key(cand_c) < m1_tie_breaker_key(cand_d)
+
+
+# ------------------------------------------------------------------------------
+# 15. M1 Probability Calibration on Clipped Log-Odds
+# ------------------------------------------------------------------------------
+def test_m1_calibration_clipped_log_odds():
+    """
+    Validation 15:
+    ModelAgnosticCalibrator with M1 extracts clipped log-odds z = log((p+eps)/(1-p+eps))
+    with eps=1e-4 and fits Platt calibrator with w > 0.
+    """
+    class MockTreeEstimator:
+        def predict_proba(self, X):
+            # Returns probabilities with some 0 and 1 values to test clipping
+            n = len(X)
+            probs = np.linspace(0.0, 1.0, n)
+            return np.column_stack([1.0 - probs, probs])
+
+    mock_rf = MockTreeEstimator()
+    mac = ModelAgnosticCalibrator(base_estimator=mock_rf, model_family="M1", min_calibration_positives=25)
+
+    X_cal = pd.DataFrame(np.zeros((960, 5)))
+    z = mac.extract_raw_scores(X_cal)
+
+    # z must be finite and clipped (no +/- inf)
+    assert np.all(np.isfinite(z))
+    assert np.isclose(z[0], np.log(1e-4 / (1.0 - 1e-4)))
+    assert np.isclose(z[-1], np.log((1.0 - 1e-4) / 1e-4))
+
+    y_cal = (z > 0).astype(int)
+    # Ensure at least 30 positives for gate
+    y_cal[:40] = 1
+    mac.fit(X_cal, y_cal)
+    assert mac.is_fitted_ is True
+    assert mac.calibrator_.w_ > 0.0
+
 

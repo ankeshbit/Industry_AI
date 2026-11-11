@@ -134,36 +134,42 @@ class RandomForestCandidateEvaluator:
         assert len(inner_folds) == 4, f"Expected 4 inner folds, got {len(inner_folds)}"
 
         y_arr = np.asarray(y_sub_train, dtype=int).ravel()
-        candidate_results = []
+        n_candidates = len(self.candidates)
+        candidate_fold_scores: List[List[float]] = [[] for _ in range(n_candidates)]
 
-        for cand_params in self.candidates:
-            fold_scores = []
+        for inner_f in inner_folds:
+            in_train_local = [sub_train_indices_map[idx] for idx in inner_f["inner_train_indices"]]
+            in_val_local = [sub_train_indices_map[idx] for idx in inner_f["inner_val_indices"]]
 
-            for inner_f in inner_folds:
-                in_train_local = [sub_train_indices_map[idx] for idx in inner_f["inner_train_indices"]]
-                in_val_local = [sub_train_indices_map[idx] for idx in inner_f["inner_val_indices"]]
+            X_tr = X_sub_train.iloc[in_train_local]
+            y_tr = y_arr[in_train_local]
+            X_va = X_sub_train.iloc[in_val_local]
+            y_va = y_arr[in_val_local]
 
-                X_tr = X_sub_train.iloc[in_train_local]
-                y_tr = y_arr[in_train_local]
-                X_va = X_sub_train.iloc[in_val_local]
-                y_va = y_arr[in_val_local]
+            # Fit preprocessor strictly on inner-train fold once
+            preprocessor = build_preprocessor(configuration=self.configuration, scale_numeric=True)
+            X_tr_trans = preprocessor.fit_transform(X_tr)
+            X_va_trans = preprocessor.transform(X_va)
 
-                pipe = build_m1_pipeline(params=cand_params, configuration=self.configuration)
-                pipe.fit(X_tr, y_tr)
+            for cand_idx, cand_params in enumerate(self.candidates):
+                clf = RandomForestClassifier(**cand_params)
+                clf.fit(X_tr_trans, y_tr)
 
                 # Canonical candidate-ranking metric (§3.3): sklearn average_precision_score
-                y_prob = pipe.predict_proba(X_va)[:, 1]
+                y_prob = clf.predict_proba(X_va_trans)[:, 1]
                 ap = float(average_precision_score(y_va, y_prob))
-                fold_scores.append(ap)
+                candidate_fold_scores[cand_idx].append(ap)
 
-            mean_ap = float(np.mean(fold_scores))
-            std_ap = float(np.std(fold_scores, ddof=1)) if len(fold_scores) > 1 else 0.0
-
+        candidate_results = []
+        for cand_idx, cand_params in enumerate(self.candidates):
+            scores = candidate_fold_scores[cand_idx]
+            mean_ap = float(np.mean(scores))
+            std_ap = float(np.std(scores, ddof=1)) if len(scores) > 1 else 0.0
             candidate_results.append({
                 "params": cand_params,
                 "mean_ap": mean_ap,
                 "std_ap": std_ap,
-                "fold_ap_scores": fold_scores,
+                "fold_ap_scores": scores,
             })
 
         # Selection and Simpler-Model Tie-Breaking Rule (§3.3):
