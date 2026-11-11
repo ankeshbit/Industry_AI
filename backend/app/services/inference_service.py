@@ -74,7 +74,8 @@ def execute_analysis(
             spec = mapping_record.mappings[canon_name]
             col_name = spec["column"]
             if canon_name == "product_type":
-                input_df[model_col_name] = df_raw[col_name].astype(str)
+                # Normalise L/M/H so e.g. "l " or "m" is not silently one-hot encoded as unknown
+                input_df[model_col_name] = df_raw[col_name].astype(str).str.strip().str.upper()
             else:
                 unit_declared = spec.get("unit", "K" if "temperature" in canon_name else "rpm" if "speed" in canon_name else "Nm" if "torque" in canon_name else "min")
                 canon_unit = "K" if "temperature" in canon_name else "rpm" if "speed" in canon_name else "Nm" if "torque" in canon_name else "min"
@@ -145,14 +146,21 @@ def execute_analysis(
     top_indices = np.argsort(probabilities)[::-1][:20]
     top_rows = []
     for idx in top_indices:
-        row_dict = {
+        features = {}
+        for k in input_df.columns:
+            val = input_df[k].iloc[idx]
+            if isinstance(val, (int, float, np.number)):
+                # NaN is not valid JSON (PostgreSQL JSON columns reject it) -> store null
+                features[k] = None if pd.isna(val) else float(val)
+            else:
+                features[k] = str(val)
+        top_rows.append({
             "row_index": int(idx),
             "failure_probability": round(float(probabilities[idx]), 4),
             "risk_class": risk_classes[idx],
             "ood_warning": bool(is_ood_array[idx]),
-            "features": {k: float(input_df[k].iloc[idx]) if isinstance(input_df[k].iloc[idx], (int, float, np.number)) else str(input_df[k].iloc[idx]) for k in input_df.columns}
-        }
-        top_rows.append(row_dict)
+            "features": features
+        })
 
     # 9. Result versioning
     latest_res = db.query(AnalysisResult).filter(
@@ -210,6 +218,8 @@ def execute_analysis(
         created_at=datetime.utcnow()
     )
     db.add(result)
+    # autoflush is disabled; flush so result.id is populated before it is referenced below
+    db.flush()
 
     # Usage event (PRD line 2601)
     db.add(UsageEvent(

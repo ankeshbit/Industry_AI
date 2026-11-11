@@ -45,9 +45,14 @@ export const TrustPanel: React.FC<TrustPanelProps> = ({ result }) => {
         {/* Stage 1: Compatibility */}
         <div className="bg-slate-900/60 p-3.5 rounded-lg border border-slate-700/40">
           <div className="text-xs text-slate-400 uppercase tracking-wider font-semibold mb-1">Stage 1: Compatibility</div>
+          {/* Previously hard-coded to "COMPATIBLE" even for COMPATIBLE_WITH_WARNINGS results */}
           <div className="flex items-center gap-2 mt-1">
-            <CheckCircle className="w-4 h-4 text-emerald-400" />
-            <span className="font-medium text-slate-200">COMPATIBLE</span>
+            {result.trust.compatibility === 'COMPATIBLE' ? (
+              <CheckCircle className="w-4 h-4 text-emerald-400" />
+            ) : (
+              <AlertTriangle className="w-4 h-4 text-amber-400" />
+            )}
+            <span className="font-medium text-slate-200">{result.trust.compatibility}</span>
           </div>
           <p className="text-xs text-slate-400 mt-1">Dataset format, schema, and units matched to profile.</p>
         </div>
@@ -77,7 +82,8 @@ export const TrustPanel: React.FC<TrustPanelProps> = ({ result }) => {
           <span>Operational Advisory & Limitations</span>
         </div>
         <p className="leading-relaxed">
-          <strong>Advisory Notice:</strong> Predictions from public reference-dataset models do not represent validated performance on your equipment. Not a safety assessment.
+          <strong>Advisory Notice:</strong>{' '}
+          {result.advisory_notice ?? 'Predictions from public reference-dataset models do not represent validated performance on your equipment. Not a safety assessment.'}
         </p>
         <p className="leading-relaxed text-slate-300">
           <strong>Semantics:</strong> {result.semantics}
@@ -105,7 +111,7 @@ export const TrustPanel: React.FC<TrustPanelProps> = ({ result }) => {
             <div><strong>Dataset Version ID:</strong> {result.provenance.dataset.id}</div>
             <div><strong>Computed At:</strong> {result.provenance.computed_at}</div>
             <div className="mt-2 text-slate-400">
-              Model Card URI: {result.evaluation_sections.reference_dataset_evaluation.model_card_uri}
+              Model Card URI: {result.evaluation_sections.reference_dataset_evaluation.model_card_uri ?? 'n/a'}
             </div>
           </div>
         )}

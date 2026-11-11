@@ -13,12 +13,23 @@ from backend.app.database import get_db
 from backend.app.models.auth import User
 from backend.app.models.compatibility import CompatibilityCheck
 from backend.app.models.analysis import AnalysisResult
+from backend.app.models.dataset import Dataset, DatasetVersion
+from backend.app.models.model import ModelVersion
 from backend.app.api.deps import get_current_user
 from backend.app.services.compatibility_service import verify_job_creation_gate
 from backend.app.services.queue_service import enqueue_job, execute_job_synchronous
 from backend.app.services.inference_service import execute_analysis
 
 router = APIRouter(tags=["Analyses"])
+
+# Standing advisory mandated by PRD v1.2 §14.2: must accompany every prediction result (UI and API).
+STANDING_ADVISORY = (
+    "This analysis was produced using a reference model trained on the AI4I 2020 Predictive Maintenance Dataset. "
+    "It reflects machine tool operating patterns from that reference dataset and has not been validated on your "
+    "specific equipment or operating conditions. Predictions must be treated as advisory inputs to human "
+    "maintenance decisions, not as definitive health assessments. The operator assumes full responsibility for "
+    "maintenance decisions."
+)
 
 class CreateAnalysisRequest(BaseModel):
     compatibility_check_id: str
@@ -27,8 +38,18 @@ class CreateAnalysisRequest(BaseModel):
     parameters: Optional[Dict[str, Any]] = None
     force_rerun: bool = False
 
-def format_analysis_result(res: AnalysisResult) -> Dict[str, Any]:
-    dataset = res.machine.datasets[0] if res.machine.datasets else None
+def format_analysis_result(res: AnalysisResult, db: Session) -> Dict[str, Any]:
+    # Resolve the dataset/version this result was actually computed from
+    # (previously: the machine's first dataset, and result_version was shown as the dataset version).
+    dv = db.query(DatasetVersion).filter(DatasetVersion.id == res.dataset_version_id).first()
+    dataset = db.query(Dataset).filter(Dataset.id == dv.dataset_id).first() if dv else None
+    model = db.query(ModelVersion).filter(ModelVersion.id == res.model_version_id).first() if res.model_version_id else None
+    check = res.compatibility_check_id and db.query(CompatibilityCheck).filter(
+        CompatibilityCheck.id == res.compatibility_check_id
+    ).first()
+    profile = check.profile if check else None
+
+    default_registry = "ai4i_failure_clf_notype" if res.configuration == "NO_TYPE" else "ai4i_failure_clf_typed"
     return {
         "id": res.id,
         "machine_id": res.machine_id,
@@ -40,33 +61,35 @@ def format_analysis_result(res: AnalysisResult) -> Dict[str, Any]:
             "dataset": {
                 "id": res.dataset_version_id,
                 "name": dataset.name if dataset else "unknown",
-                "version": res.result_version,
+                "version": dv.version_no if dv else None,
                 "provenance": dataset.provenance if dataset else "CUSTOMER"
             },
-            "profile": f"{res.configuration}@1.0.0",
+            "profile": f"{profile.profile_id}@{profile.version}" if profile else f"{res.configuration}@1.0.0",
             "model": {
-                "registry_name": "ai4i_failure_clf_notype" if res.configuration == "NO_TYPE" else "ai4i_failure_clf_typed",
-                "version": "1.0.0",
+                "registry_name": model.registry_name if model else default_registry,
+                "version": model.version if model else "1.0.0",
                 "training_domain": res.training_domain,
                 "trained_on": "AI4I 2020 (synthetic)"
             },
             "computed_at": res.created_at.isoformat()
         },
         "trust": {
-            "compatibility": "COMPATIBLE",
+            "compatibility": check.status if check else "COMPATIBLE",
             "applicability": res.applicability_level,
             "reliability_tier": res.reliability_tier,
             "label": "Reference-dataset-trained model – not validated on your equipment"
         },
         "semantics": "Reference-calibrated failure probability for the supplied operating state; no time horizon is implied.",
         "evaluation_sections": {
-            "reference_dataset_evaluation": {"model_card_uri": res.artifact_uri},
+            # Expose the model card, not the server-side filesystem path of the model artifact
+            "reference_dataset_evaluation": {"model_card_uri": model.model_card_uri if model else None},
             "customer_specific_validation": None
         },
         "summary": res.summary,
         "ood_summary": res.ood_summary,
         "limitations": res.limitations,
         "explanation_disclaimer": "Feature attributions describe model behaviour, not physical causation.",
+        "advisory_notice": STANDING_ADVISORY,
         "created_at": res.created_at.isoformat()
     }
 
@@ -103,17 +126,19 @@ def request_analysis(
         "params": req.parameters or {}
     }
 
+    # A forced re-run must create a new job: reusing the idempotent job would attempt to insert a
+    # second AnalysisResult with the same (unique) job_id and fail.
     job, is_new = enqueue_job(
         db=db,
         org_id=current_user.organisation_id,
         job_type="RUN_ANALYSIS",
         payload=payload,
-        idempotency_key=idempotency_key,
+        idempotency_key=None if req.force_rerun else idempotency_key,
         user_id=current_user.id
     )
 
     # For local/testing fast-path: execute immediately if new
-    if is_new or req.force_rerun:
+    if is_new:
         job = execute_job_synchronous(db, job)
 
     # Fetch created result
@@ -148,7 +173,7 @@ def get_analysis_result(
     ).first()
     if not res:
         raise HTTPException(status_code=404, detail="Analysis result not found.")
-    return format_analysis_result(res)
+    return format_analysis_result(res, db)
 
 @router.get("/analyses/{result_id}/rows", status_code=status.HTTP_200_OK)
 def get_analysis_rows(
@@ -180,4 +205,4 @@ def get_machine_analyses(
         AnalysisResult.machine_id == id,
         AnalysisResult.organisation_id == current_user.organisation_id
     ).order_by(AnalysisResult.created_at.desc()).all()
-    return [format_analysis_result(r) for r in results]
+    return [format_analysis_result(r, db) for r in results]

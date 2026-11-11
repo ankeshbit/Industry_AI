@@ -114,11 +114,13 @@ cd frontend
 npm install
 npm run dev
 ```
-*The React SPA will be accessible at `http://localhost:5173`.*
+*The React SPA will be accessible at `http://localhost:3000` (port set in `vite.config.ts`; `/api` is proxied to the backend on port 8000).*
 
 ---
 
 ### Option B: Docker Compose (Full Stack)
+
+> **Prerequisite:** the reference model files (`ml/artifacts/models/*.joblib`) are gitignored. Place `ai4i2020.csv` in `ml/datasets/raw/` and run `python ml/experiments/run_baseline_experiments.py` *before* `docker compose up --build`, otherwise the image has no models and analyses fail with `Model artifact not found`.
 
 To run the complete production-like stack (PostgreSQL, Backend API, Worker, and Frontend Nginx):
 ```bash

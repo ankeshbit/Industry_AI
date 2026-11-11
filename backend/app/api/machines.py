@@ -118,7 +118,12 @@ def patch_machine(
     db: Session = Depends(get_db)
 ):
     """Updates machine details."""
-    updates = req.dict(exclude_unset=True)
+    updates = req.model_dump(exclude_unset=True)
+    # name is NOT NULL; ignore explicit nulls instead of causing a 500 IntegrityError
+    if updates.get("name") is None:
+        updates.pop("name", None)
+    if updates.get("category_code") is None:
+        updates.pop("category_code", None)
     m = update_machine(db, current_user.organisation_id, id, updates)
     return {"message": "Machine updated successfully.", "id": m.id}
 

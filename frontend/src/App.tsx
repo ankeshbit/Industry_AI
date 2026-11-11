@@ -25,6 +25,7 @@ export function App() {
           setCurrentUser(user);
         } catch (e) {
           localStorage.removeItem('access_token');
+          localStorage.removeItem('refresh_token');
         }
       }
       setAuthChecked(true);

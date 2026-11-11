@@ -214,7 +214,7 @@ print(f"Class Imbalance Ratio: 1 : {fail_counts[0]/fail_counts[1]:.1f}")
 cells.append(nbf.v4.new_markdown_cell("""## 5. Critical Discrepancy & Multi-Label Co-Occurrence Analysis
 
 A vital analytical finding in AI4I 2020 is that `Machine failure` does **not** equal a simple logical OR of the 5 failure modes:
-$$\text{Machine failure} \neq \text{TWF} \lor \text{HDF} \lor \text{PWF} \lor \text{OSF} \lor \text{RNF}$$
+$$\\text{Machine failure} \\neq \\text{TWF} \\lor \\text{HDF} \\lor \\text{PWF} \\lor \\text{OSF} \\lor \\text{RNF}$$
 
 Let us analyze:
 1. **The 18 RNF Mismatches**: Instances where `RNF = 1` but `Machine failure = 0`.

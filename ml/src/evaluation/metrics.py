@@ -117,7 +117,7 @@ def plot_confusion_matrices_grid(
         )
         cost_str = f"${res['total_operational_cost']:,.0f}"
         ax.set_title(
-            f"{model_name}\\nRecall: {res['recall']:.2f} | Cost: {cost_str}",
+            f"{model_name}\nRecall: {res['recall']:.2f} | Cost: {cost_str}",
             fontweight="bold",
             fontsize=10
         )

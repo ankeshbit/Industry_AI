@@ -147,6 +147,14 @@ def execute_job_synchronous(db: Session, job: Job) -> Job:
     Executes a claimed job synchronously, updating status, progress, heartbeat, and handling retries (AC-JOB-1..5).
     """
     try:
+        # Jobs run inline by the API fast-path are never claimed by a worker. Mark them as
+        # claimed/running and count the attempt so retry back-off and max_attempts work
+        # (previously attempt stayed 0, giving a backoff index of -1 and endless retries).
+        if job.status != "RUNNING":
+            job.status = "RUNNING"
+            job.started_at = datetime.utcnow()
+            job.attempt += 1
+            job.claimed_by = job.claimed_by or "inline"
         update_job_heartbeat(db, job, progress=25, step="PROCESSING")
 
         if job.job_type == "VALIDATE_DATASET":

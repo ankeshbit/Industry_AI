@@ -2,7 +2,8 @@
  * API Client for INDUSTRIA AI Backend (PRD v1.2 §13)
  */
 
-const BASE_URL = '/api/v1';
+// .env.example documents VITE_API_BASE_URL, but it was never read; default keeps the dev proxy / nginx setup working
+const BASE_URL: string = (import.meta.env.VITE_API_BASE_URL as string | undefined) || '/api/v1';
 
 export interface User {
   id: string;
@@ -90,7 +91,7 @@ export interface AnalysisResult {
   };
   semantics: string;
   evaluation_sections: {
-    reference_dataset_evaluation: { model_card_uri: string };
+    reference_dataset_evaluation: { model_card_uri: string | null };
     customer_specific_validation: null;
   };
   summary: {
@@ -109,6 +110,7 @@ export interface AnalysisResult {
   };
   limitations: string[];
   explanation_disclaimer: string;
+  advisory_notice?: string;
   created_at: string;
 }
 
@@ -117,15 +119,61 @@ function getAuthHeader(): Record<string, string> {
   return token ? { Authorization: `Bearer ${token}` } : {};
 }
 
+// Access tokens live 15 minutes (backend ACCESS_TOKEN_EXPIRE_MINUTES). Previously the stored refresh
+// token was never used, so users were silently broken after 15 minutes. Share one in-flight refresh.
+let refreshInFlight: Promise<boolean> | null = null;
+
+async function refreshAccessToken(): Promise<boolean> {
+  const refreshToken = localStorage.getItem('refresh_token');
+  if (!refreshToken) return false;
+  if (!refreshInFlight) {
+    refreshInFlight = (async () => {
+      try {
+        const res = await fetch(`${BASE_URL}/auth/refresh`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ refresh_token: refreshToken }),
+        });
+        if (!res.ok) {
+          localStorage.removeItem('access_token');
+          localStorage.removeItem('refresh_token');
+          return false;
+        }
+        const data = await res.json();
+        localStorage.setItem('access_token', data.access_token);
+        localStorage.setItem('refresh_token', data.refresh_token);
+        return true;
+      } catch {
+        return false;
+      } finally {
+        refreshInFlight = null;
+      }
+    })();
+  }
+  return refreshInFlight;
+}
+
+/** fetch() that retries once with a refreshed access token on 401 (skipped for auth endpoints). */
+async function authedFetch(url: string, init: RequestInit): Promise<Response> {
+  const build = (): RequestInit => ({
+    ...init,
+    headers: { ...(init.headers as Record<string, string>), ...getAuthHeader() },
+  });
+  let res = await fetch(url, build());
+  if (res.status === 401 && !url.includes('/auth/') && (await refreshAccessToken())) {
+    res = await fetch(url, build());
+  }
+  return res;
+}
+
 export async function request<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
   const url = `${BASE_URL}${endpoint}`;
   const headers = {
     'Content-Type': 'application/json',
-    ...getAuthHeader(),
-    ...options.headers,
+    ...(options.headers as Record<string, string>),
   };
 
-  const res = await fetch(url, { ...options, headers });
+  const res = await authedFetch(url, { ...options, headers });
   if (!res.ok) {
     const errorJson = await res.json().catch(() => ({ error: { message: res.statusText } }));
     throw errorJson.error || { message: res.statusText, status: res.status };
@@ -149,6 +197,15 @@ export const api = {
     },
     getMe: () => request<User>('/users/me'),
     logout: () => {
+      const refreshToken = localStorage.getItem('refresh_token');
+      if (refreshToken) {
+        // Best-effort server-side revocation of the refresh token family member
+        fetch(`${BASE_URL}/auth/logout`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ refresh_token: refreshToken }),
+        }).catch(() => undefined);
+      }
       localStorage.removeItem('access_token');
       localStorage.removeItem('refresh_token');
     },
@@ -169,9 +226,8 @@ export const api = {
     upload: async (datasetId: string, file: File) => {
       const formData = new FormData();
       formData.append('file', file);
-      const res = await fetch(`${BASE_URL}/datasets/${datasetId}/versions/upload`, {
+      const res = await authedFetch(`${BASE_URL}/datasets/${datasetId}/versions/upload`, {
         method: 'POST',
-        headers: getAuthHeader(),
         body: formData,
       });
       if (!res.ok) {
