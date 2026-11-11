@@ -76,10 +76,10 @@ All figures below are forensic empirical values extracted directly from `ml/arti
 - **Model Version:** `3.0.0` (Promoted to `PRODUCTION` stage)
 - **Model Family:** M2 XGBoost 2.1.4
 - **Configuration:** `WITH_TYPE` (Profile: `ai4i_failure_with_type`)
-- **Winning Hyperparameters:** `learning_rate=0.1, max_depth=4, min_child_weight=1, colsample_bytree=1.0, subsample=0.7, n_estimators=80, tree_method="hist", random_state=42`
+- **Winning Hyperparameters:** `learning_rate=0.1, max_depth=4, min_child_weight=1, colsample_bytree=1.0, subsample=0.7, n_estimators=74, tree_method="hist", random_state=42`
 - **Class Balancing:** `scale_pos_weight = N_neg / N_pos = 28.47` (computed on Sub-Train)
 - **Artifact Path:** `ml/artifacts/models/production_m2_config_a.joblib`
-- **Artifact SHA-256:** `da159fa76524a82c66cb5c44d6a13477d95fbf84a3ccbb7166d35c0a9b8756e0`
+- **Artifact SHA-256:** `caa17fdb6c6871afdd87c5bd05d1ad5bc5a568e2c94877935bd242fbcb16824a`
 - **Training Domain:** `REFERENCE_DATASET` (Synthetic AI4I 2020)
 - **Reliability Tier:** `REFERENCE_ONLY`
 
@@ -95,26 +95,26 @@ All figures below are forensic empirical values extracted directly from `ml/arti
 - **Operational Cost at $\tau^*$ (50:1 cost ratio):** **$72,856.00 ± $23,740.93**
 
 ### C. Confirmed Historical Benchmark Test Evaluation (N=2,000, 68 Failures, Hash `8e8fef98...`)
-- **Average Precision (PR-AUC):** **0.75683**
-- **ROC-AUC:** **0.97417**
-- **Brier Score:** **0.014470**
-- **Brier Skill Score:** **0.55943**
+- **Average Precision (PR-AUC):** **0.76165**
+- **ROC-AUC:** **0.96881**
+- **Brier Score:** **0.014822**
+- **Brier Skill Score:** **0.54870**
 - **Optimal Decision Threshold:** $\tau^* = \mathbf{0.0100}$ (Bayes theoretical = 0.01961)
 - **Operational Decision Metrics at $\tau^* = 0.0100$:**
-  - True Positives (TP): 63
-  - False Positives (FP): 231
-  - False Negatives (FN): 5
-  - True Negatives (TN): 1,701
-  - **Recall:** **0.9265** (63 of 68 failures successfully detected)
-  - **Precision:** **0.2143**
-  - **F1-Score:** **0.3481**
-  - **Illustrative Operational Cost:** **$96,200.00** ($5 \times \$10,000 + 231 \times \$200$)
+  - True Positives (TP): 65
+  - False Positives (FP): 236
+  - False Negatives (FN): 3
+  - True Negatives (TN): 1,696
+  - **Recall:** **0.9559** (65 of 68 failures successfully detected)
+  - **Precision:** **0.2159**
+  - **F1-Score:** **0.3523**
+  - **Illustrative Operational Cost:** **$77,200.00** ($3 \times \$10,000 + 236 \times \$200$)
 
 ### D. Calibration & Explainability Verification
 - **Platt Sigmoid Calibrator:** Fitted on disjoint Calibration partition ($N = 1,200$, $N_{\text{cal,pos}} = 41 \ge 25$).
-  - Slope ($w$): $0.9584 \pm 0.1073$
-  - Intercept ($c$): $-2.2984 \pm 0.2411$
+  - Slope ($w$): $0.9502 \pm 0.1068$
+  - Intercept ($c$): $-2.2492 \pm 0.2384$
 - **TreeSHAP Explainability (AC-XAI-1, AC-XAI-2):**
-  - Margin additivity verified: $\max | \sum \phi_j + \phi_0 - f(x) | = 3.81 \times 10^{-6} \le 10^{-5}$ tolerance.
+  - Margin additivity verified: $\max | \sum \phi_j + \phi_0 - f(x) | = 2.86 \times 10^{-6} \le 10^{-5}$ tolerance.
   - Non-Causality Notice: Feature attributions describe model behaviour, not physical causation.
 

@@ -64,6 +64,49 @@ def compute_sha256(file_path: Path) -> str:
     return h.hexdigest()
 
 
+def derive_production_xgboost_params(
+    configuration: str,
+    report_path: Optional[Path] = None,
+) -> Tuple[Dict[str, Any], int]:
+    """
+    Derives production hyperparameters and boosting rounds according to Architecture v1.4.2 §12.2:
+    - Winning hyperparameters: mode (highest frequency) across 25 outer folds.
+    - Final boosting rounds: ceiling median of fold-level boosting rounds across all 25 outer folds.
+    """
+    config_upper = "A" if configuration.upper() in ("A", "WITH_TYPE") else "B"
+    config_key = f"M2_XGBoost_Config_{config_upper}_{'WITH_TYPE' if config_upper == 'A' else 'NO_TYPE'}"
+    if report_path is None:
+        report_path = root_dir / "ml" / "artifacts" / "stage3_phase2c_xgboost_report.json"
+    
+    with open(report_path, "r", encoding="utf-8") as f:
+        rep = json.load(f)
+        
+    folds = rep["experiments"][config_key]["fold_evaluations"]
+    assert len(folds) == 25, f"Expected 25 outer fold evaluations, got {len(folds)}"
+    
+    param_counts: Dict[Tuple, int] = {}
+    param_dict_map: Dict[Tuple, Dict[str, Any]] = {}
+    rounds_list: List[int] = []
+    
+    for f in folds:
+        winning = f["winning_hyperparameters"]
+        filtered = {k: v for k, v in winning.items() if k not in ("n_estimators", "n_estimators_fitted", "n_jobs", "random_state", "scale_pos_weight")}
+        key = tuple(sorted(filtered.items()))
+        param_counts[key] = param_counts.get(key, 0) + 1
+        param_dict_map[key] = filtered
+        rounds_list.append(winning["n_estimators_fitted"])
+        
+    # Modal hyperparameter tuple
+    modal_key = max(param_counts.items(), key=lambda item: item[1])[0]
+    best_params = param_dict_map[modal_key]
+    
+    # Ceiling median rounds across all 25 outer folds (§12.2)
+    sorted_rounds = sorted(rounds_list)
+    median_rounds = int(sorted_rounds[len(sorted_rounds) // 2])
+    
+    return best_params, median_rounds
+
+
 def partition_development_data(
     y_dev: np.ndarray,
     random_state: int = 42,
@@ -161,34 +204,41 @@ def train_and_package_production_model(
     print(f"Development partitions: Sub-Train={len(X_sub)} (prev={p_reference_sub_train:.4f}), Cal={len(X_cal)}, Thresh={len(X_th)}")
 
     # 4. Pipeline Construction and Fitting
+    n_pos = int(np.sum(y_sub == 1))
+    n_neg = int(np.sum(y_sub == 0))
+    scale_pos_weight = float(n_neg / max(1, n_pos))
+
     if family_upper == "M2":
-        default_params = {
-            "n_estimators": 100,
-            "max_depth": 5,
-            "learning_rate": 0.05,
-            "subsample": 0.8,
-            "colsample_bytree": 0.8,
-            "min_child_weight": 3,
-            "tree_method": "hist",
-            "eval_metric": "aucpr",
-            "random_state": 42,
-            "n_jobs": -1,
-        }
-        if hyperparameters:
-            default_params.update(hyperparameters)
-        pipeline = build_m2_pipeline(params=default_params, configuration=config_upper)
+        if hyperparameters is not None:
+            chosen_params = dict(hyperparameters)
+            boosting_rounds = chosen_params.pop("n_estimators", 100)
+        else:
+            # Derive modal parameters and ceiling median boosting rounds from nested CV (§12.2)
+            derived_params, derived_rounds = derive_production_xgboost_params(configuration=config_upper)
+            chosen_params = derived_params
+            boosting_rounds = derived_rounds
+
+        print(f"Production M2 Parameters (§12.2): {chosen_params} | Boosting Rounds T* = {boosting_rounds}")
+        pipeline = build_m2_pipeline(
+            params=chosen_params,
+            scale_pos_weight=scale_pos_weight,
+            n_estimators=boosting_rounds,
+            configuration=config_upper,
+        )
     elif family_upper == "M1":
         default_params = {
             "n_estimators": 100,
-            "max_depth": 8,
-            "min_samples_split": 5,
-            "max_features": "sqrt",
+            "max_depth": None,
+            "min_samples_split": 2,
+            "max_features": "log2",
             "class_weight": "balanced",
             "random_state": 42,
             "n_jobs": -1,
         }
         if hyperparameters:
             default_params.update(hyperparameters)
+        chosen_params = default_params
+        boosting_rounds = 100
         pipeline = build_m1_pipeline(params=default_params, configuration=config_upper)
     else:
         raise ValueError(f"Unsupported model family: {family_upper}")
@@ -213,7 +263,7 @@ def train_and_package_production_model(
     threshold_opt = ThresholdOptimizer(cost_fn=10000.0, cost_fp=200.0)
     threshold_opt.optimize(y_val=y_th, y_prob_val=prob_th)
     optimal_tau = threshold_opt.optimal_threshold_
-    print(f"  Optimal Operating Threshold: tau* = {optimal_tau:.4f} (Bayes theoretical = {threshold_opt.bayes_threshold_:.5f})")
+    print(f"  Optimal Operating Threshold: tau* = {optimal_tau:.4f} (Bayes theoretical = {threshold_opt.tau_bayes_:.5f})")
 
     # 7. Single Evaluation on Locked Historical Benchmark Test Set (N = 2,000)
     print(f"Evaluating frozen bundle on Historical Benchmark Test partition (N = {len(X_test)})...")
@@ -250,9 +300,9 @@ def train_and_package_production_model(
         raw_margin = classifier_step.predict(X_sub_trans, output_margin=True)
         base_val = explainer.expected_value
         reconstructed = np.sum(shap_vals, axis=1) + base_val
-        max_diff = np.max(np.abs(reconstructed - raw_margin))
+        max_diff = float(np.max(np.abs(reconstructed - raw_margin)))
         print(f"  SHAP Margin Reconstruction Max Delta: {max_diff:.8f} (tolerance <= 1e-5: {max_diff <= 1e-5})")
-        assert max_diff <= 1e-4, f"SHAP reconstruction error {max_diff} exceeded tolerance"
+        assert max_diff <= 1e-5, f"SHAP reconstruction error {max_diff} exceeded tolerance 1e-5"
 
     # 9. Packaging Production Artifact Bundle
     if not output_basename:
@@ -275,6 +325,9 @@ def train_and_package_production_model(
         "feature_names": list(X.columns),
         "target_col": "Machine failure",
         "reliability_tier": "REFERENCE_ONLY",
+        "winning_hyperparameters": chosen_params,
+        "boosting_rounds": boosting_rounds,
+        "aggregation_protocol": "Architecture v1.4.2 §12.2 Modal Configuration + Ceiling Median Rounds across 25 Outer Folds",
         "governance": {
             "training_domain": "REFERENCE_DATASET",
             "dataset_checksum": AI4I_SHA256_CHECKSUM,
@@ -290,7 +343,15 @@ def train_and_package_production_model(
             "brier_score": bs_test,
             "brier_skill_score": bss_test,
             "operational_cost": cost_test,
-            "confusion_matrix": test_metrics["classification_metrics"]["confusion_matrix"],
+            "confusion_matrix": {
+                "true_positives": test_metrics["operational_metrics"]["true_positives"],
+                "false_positives": test_metrics["operational_metrics"]["false_positives"],
+                "false_negatives": test_metrics["operational_metrics"]["false_negatives"],
+                "true_negatives": test_metrics["operational_metrics"]["true_negatives"],
+                "precision": test_metrics["operational_metrics"]["precision"],
+                "recall": test_metrics["operational_metrics"]["recall"],
+                "f1_score": test_metrics["operational_metrics"]["f1_score"],
+            },
         },
         "created_at": time.strftime("%Y-%m-%d %H:%M:%SZ", time.gmtime()),
     }
@@ -311,6 +372,9 @@ def train_and_package_production_model(
         "optimal_threshold": optimal_tau,
         "prevalence_reference": p_reference_sub_train,
         "feature_names": list(X.columns),
+        "winning_hyperparameters": chosen_params,
+        "boosting_rounds": boosting_rounds,
+        "aggregation_protocol": "Architecture v1.4.2 §12.2 Modal Configuration + Ceiling Median Rounds across 25 Outer Folds",
         "calibration_diagnostics": cal_diag,
         "historical_test_benchmark": production_bundle["historical_test_benchmark"],
         "governance": production_bundle["governance"],

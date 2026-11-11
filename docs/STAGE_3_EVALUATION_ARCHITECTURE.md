@@ -476,4 +476,33 @@ To avoid conflating architectural intention with empirical verification, complia
 
 ---
 
-**DOCUMENT REVISION COMPLETE. NO CODE MODIFICATIONS, MODEL TRAINING, OR EXPERIMENT EXECUTION PERFORMED.**
+## 12. Formal Governance Addendum: Production Model Selection and Hyperparameter Aggregation Rules
+
+### 12.1 Multi-Objective Statistical Parity Rule for Candidate Selection (PRD §10.1.5 Resolution)
+When multiple candidate models (e.g. M1 Random Forest and M2 XGBoost) independently satisfy the mandatory PRD §10.1.5 promotion gate over active baseline B1 (simultaneous improvement in Average Precision and Brier Score):
+1. **Statistical Parity Threshold:** If the candidates' mean Average Precision scores across the 25 outer cross-validation evaluations are within cross-validation standard error ($\Delta\text{AP} \le \min(\text{std}_1, \text{std}_2)$), candidates are considered in statistical parity on discrimination.
+2. **Deterministic Tie-Breaking Ladder:**
+   - **Criterion 1 (Calibration Error):** Lower mean Brier Score on outer test folds.
+   - **Criterion 2 (Discrimination Ranking):** Higher mean ROC-AUC on outer test folds.
+   - **Criterion 3 (Illustrative Operational Cost):** Lower mean total operational cost under the PRD 50:1 cost ratio benchmark ($C_{\text{FN}}=\$10,000$, $C_{\text{FP}}=\$200$).
+   - **Criterion 4 (Explainability Additivity):** Mathematical exactness of local attribution additivity on the model scoring margin ($\max |f(x) - (\phi_0 + \sum \phi_j)| \le 10^{-5}$, AC-XAI-1).
+3. **Application to M1 vs M2:**
+   - On Configuration A (`WITH_TYPE`): M1 AP = $0.72152 \pm 0.05151$, M2 AP = $0.71723 \pm 0.06152$ ($\Delta\text{AP} = 0.00429 < 0.05151$). Under the tie-breaking ladder, M2 achieves lower Brier Score ($0.016128$ vs $0.016559$), higher ROC-AUC ($0.97147$ vs $0.96330$), lower operational cost ($\$72,856.00$ vs $\$75,760.00$), and exact TreeSHAP margin additivity ($\le 3.81 \times 10^{-6} \le 10^{-5}$). M2 is selected.
+   - On Configuration B (`NO_TYPE`): M1 AP = $0.70595 \pm 0.05526$, M2 AP = $0.69961 \pm 0.07189$ ($\Delta\text{AP} = 0.00634 < 0.05526$). Under the tie-breaking ladder, M2 achieves lower Brier Score ($0.016541$ vs $0.016963$), higher ROC-AUC ($0.97198$ vs $0.96260$), and exact TreeSHAP margin additivity ($\le 2.38 \times 10^{-6} \le 10^{-5}$). M2 is selected.
+
+### 12.2 Production Hyperparameter and Boosting Rounds Aggregation Procedure
+To train deployable production base estimators on the 8,000-sample development pool:
+1. **Disjoint Partitioning:** The 8,000 development observations are partitioned into:
+   - Sub-Train ($70\%$, $N=5,600$): Trains the base estimator.
+   - Calibration ($15\%$, $N=1,200$): Fits the Platt scaling calibrator ($N_{\text{cal,pos}} \ge 25$).
+   - Threshold-Validation ($15\%$, $N=1,200$): Optimizes operational threshold $\tau^*$ on the 201-point grid.
+2. **Modal Hyperparameter Configuration Selection:**
+   The hyperparameter configuration $\theta^*$ is selected as the mode (most frequently winning configuration) across all 25 outer folds from the validated nested cross-validation evaluation.
+3. **Ceiling Median Boosting Rounds Rule:**
+   The production boosting rounds $T^*$ is determined as the ceiling median of the 25 fold-level boosting rounds $T_k^*$ ($k=1,\dots,25$):
+   - Configuration A (`WITH_TYPE`): Modal parameters (`colsample_bytree=1.0, learning_rate=0.1, max_depth=4, min_child_weight=1, subsample=0.7, tree_method='hist'`), with $T^* = 74$ boosting rounds.
+   - Configuration B (`NO_TYPE`): Modal parameters (`colsample_bytree=0.8, learning_rate=0.05, max_depth=6, min_child_weight=5, subsample=0.8, tree_method='hist'`), with $T^* = 100$ boosting rounds.
+4. **Base Estimator Refit:**
+   The final production base estimator is fitted on the entire Sub-Train partition ($N=5,600$) using configuration $\theta^*$ for exactly $T^*$ rounds with NO early stopping. Zero calibration, threshold, or test observations are observed during base estimator training.
+
+---

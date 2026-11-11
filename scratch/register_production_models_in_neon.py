@@ -54,32 +54,43 @@ def register_models():
                     "method": "stage3_cost_sensitive_out_of_sample"
                 },
                 dataset_hash="dc6630cd9b1f0f853922fad78a1b6436570d3f1ec863f1dd5c4340ac56bc8a8e",
-                model_card_uri="docs/model_cards/MODEL_CARD_CONFIG_A.md",
+                model_card_uri="docs/model_cards/ai4i_failure_clf_typed.md",
                 promoted_at=datetime.utcnow(),
             )
             db.add(mv_typed)
             db.flush()
+        else:
+            mv_typed.stage = "PRODUCTION"
+            mv_typed.algorithm = "XGBoost (M2 + Platt Calibrated)"
+            mv_typed.model_card_uri = "docs/model_cards/ai4i_failure_clf_typed.md"
+            mv_typed.thresholds = {
+                "optimal_tau": 0.0100,
+                "cost_ratio": 50.0,
+                "bayes_tau": 0.01961,
+                "method": "stage3_cost_sensitive_out_of_sample"
+            }
+            db.query(ModelEvaluation).filter(ModelEvaluation.model_version_id == mv_typed.id).delete()
 
-            # Add evaluation records
-            metrics_typed = [
-                ("PR-AUC", 0.75683),
-                ("ROC-AUC", 0.97417),
-                ("BrierScore", 0.01447),
-                ("BrierSkillScore", 0.55943),
-                ("OperationalCost", 96200.0),
-                ("Precision", 0.2143),
-                ("Recall", 0.9265),
-                ("F1-Score", 0.3481),
-            ]
-            for m_name, m_val in metrics_typed:
-                db.add(ModelEvaluation(
-                    model_version_id=mv_typed.id,
-                    evaluation_kind="REFERENCE_DATASET",
-                    split="test",
-                    metric_name=m_name,
-                    metric_value=m_val,
-                    n_samples=2000,
-                ))
+        # Add evaluation records for WITH_TYPE
+        metrics_typed = [
+            ("PR-AUC", 0.76165),
+            ("ROC-AUC", 0.96881),
+            ("BrierScore", 0.014822),
+            ("BrierSkillScore", 0.54870),
+            ("OperationalCost", 77200.0),
+            ("Precision", 0.2159),
+            ("Recall", 0.9559),
+            ("F1-Score", 0.3523),
+        ]
+        for m_name, m_val in metrics_typed:
+            db.add(ModelEvaluation(
+                model_version_id=mv_typed.id,
+                evaluation_kind="REFERENCE_DATASET",
+                split="test",
+                metric_name=m_name,
+                metric_value=m_val,
+                n_samples=2000,
+            ))
 
         # 4. Check or insert 3.0.0 for NO_TYPE
         mv_notype = db.query(ModelVersion).filter(
@@ -107,32 +118,43 @@ def register_models():
                     "method": "stage3_cost_sensitive_out_of_sample"
                 },
                 dataset_hash="dc6630cd9b1f0f853922fad78a1b6436570d3f1ec863f1dd5c4340ac56bc8a8e",
-                model_card_uri="docs/model_cards/MODEL_CARD_CONFIG_B.md",
+                model_card_uri="docs/model_cards/ai4i_failure_clf_notype.md",
                 promoted_at=datetime.utcnow(),
             )
             db.add(mv_notype)
             db.flush()
+        else:
+            mv_notype.stage = "PRODUCTION"
+            mv_notype.algorithm = "XGBoost (M2 + Platt Calibrated)"
+            mv_notype.model_card_uri = "docs/model_cards/ai4i_failure_clf_notype.md"
+            mv_notype.thresholds = {
+                "optimal_tau": 0.0100,
+                "cost_ratio": 50.0,
+                "bayes_tau": 0.01961,
+                "method": "stage3_cost_sensitive_out_of_sample"
+            }
+            db.query(ModelEvaluation).filter(ModelEvaluation.model_version_id == mv_notype.id).delete()
 
-            # Add evaluation records
-            metrics_notype = [
-                ("PR-AUC", 0.72833),
-                ("ROC-AUC", 0.97297),
-                ("BrierScore", 0.01524),
-                ("BrierSkillScore", 0.53599),
-                ("OperationalCost", 76800.0),
-                ("Precision", 0.2647),
-                ("Recall", 0.9412),
-                ("F1-Score", 0.4129),
-            ]
-            for m_name, m_val in metrics_notype:
-                db.add(ModelEvaluation(
-                    model_version_id=mv_notype.id,
-                    evaluation_kind="REFERENCE_DATASET",
-                    split="test",
-                    metric_name=m_name,
-                    metric_value=m_val,
-                    n_samples=2000,
-                ))
+        # Add evaluation records for NO_TYPE
+        metrics_notype = [
+            ("PR-AUC", 0.73822),
+            ("ROC-AUC", 0.97159),
+            ("BrierScore", 0.014970),
+            ("BrierSkillScore", 0.54421),
+            ("OperationalCost", 72400.0),
+            ("Precision", 0.2347),
+            ("Recall", 0.9559),
+            ("F1-Score", 0.3768),
+        ]
+        for m_name, m_val in metrics_notype:
+            db.add(ModelEvaluation(
+                model_version_id=mv_notype.id,
+                evaluation_kind="REFERENCE_DATASET",
+                split="test",
+                metric_name=m_name,
+                metric_value=m_val,
+                n_samples=2000,
+            ))
 
         db.commit()
         print("Successfully registered production model versions in Neon PostgreSQL!")

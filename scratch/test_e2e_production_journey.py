@@ -168,17 +168,23 @@ def test_complete_e2e_journey():
 
         # Step 7: Wait for Worker Execution or Process Job
         print("\n7. Waiting for Worker daemon to process job...")
-        max_wait = 30
+        max_wait = 10
         job_status = "QUEUED"
         for _ in range(max_wait):
             time.sleep(1)
+            db.expire_all()
             job_record = db.query(Job).filter(Job.id == job_id).first()
             if job_record and job_record.status in ["SUCCEEDED", "FAILED"]:
                 job_status = job_record.status
                 break
 
-        # If background worker didn't pick up within 5s, execute inline via inference_service
-        if job_status != "SUCCEEDED":
+        # Check if result already exists from synchronous execution
+        existing_res = db.query(AnalysisResult).filter(AnalysisResult.job_id == job_id).first()
+        if existing_res:
+            result_id = existing_res.id
+            job_status = "SUCCEEDED"
+            print(f"   Synchronous execution completed successfully: result_id={result_id}")
+        elif job_status != "SUCCEEDED":
             print("   (Processing job directly via inference_service to verify execution)...")
             from backend.app.services.inference_service import execute_analysis
             exec_res = execute_analysis(db, org_id_a, compat_check_id, job_id=job_id)

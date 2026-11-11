@@ -200,7 +200,7 @@ def execute_analysis(
             explanation_meta = {
                 "method": "TreeSHAP",
                 "base_margin_value": round(base_val, 5),
-                "additivity_verified": bool(max_delta <= 1e-4),
+                "additivity_verified": bool(max_delta <= 1e-5),
                 "max_reconstruction_delta": round(max_delta, 8),
                 "non_causality_disclaimer": "Feature attributions describe model behaviour, not physical causation.",
                 "optimal_threshold": tau,

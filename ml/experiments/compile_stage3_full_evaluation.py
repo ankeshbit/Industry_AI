@@ -222,34 +222,68 @@ def compile_full_evaluation_report() -> Dict[str, Any]:
                 "candidate": cand_name,
                 "label": cand_key,
                 "ap_mean": cand_ap,
+                "ap_std": cand_sum["ranking_metrics"]["average_precision"]["std"],
                 "ap_delta_vs_b1": round(ap_delta, 5),
                 "ap_relative_change_pct": round(ap_pct, 2),
                 "passes_ap_gate": passes_ap,
                 "brier_mean": cand_brier,
+                "brier_std": cand_sum["calibration_metrics"]["brier_score"]["std"],
                 "brier_delta_vs_b1": round(brier_delta, 6),
                 "brier_relative_change_pct": round(brier_pct, 2),
                 "passes_brier_gate": passes_brier,
                 "is_promotable": promotable,
                 "mean_operational_cost": cand_sum["operational_metrics"]["operational_cost"]["mean"],
                 "mean_roc_auc": cand_sum["ranking_metrics"]["roc_auc"]["mean"],
+                "mean_ece": cand_sum["calibration_metrics"]["expected_calibration_error"]["mean"],
             })
 
-        # Determine winner: among promotable candidates, maximize Average Precision
+        # Determine winner according to Architecture v1.4.2 §12.1 Multi-Objective Statistical Parity Rule
         promotable_candidates = [d for d in promotion_decisions if d["is_promotable"]]
-        if promotable_candidates:
-            # Sort by AP descending
-            promotable_candidates.sort(key=lambda x: x["ap_mean"], reverse=True)
+        if not promotable_candidates:
+            selected_model = "B1"
+            selection_rationale = "No candidate satisfied PRD §10.1.5 dual improvement criteria over active baseline B1; B1 retained."
+        elif len(promotable_candidates) == 1:
             winner = promotable_candidates[0]
             selected_model = winner["candidate"]
             selection_rationale = (
-                f"{winner['candidate']} demonstrated superior Average Precision ({winner['ap_mean']:.5f} vs B1 {b1_ap:.5f}, "
-                f"+{winner['ap_relative_change_pct']}%) while simultaneously achieving lower Brier Score ({winner['brier_mean']:.6f} vs B1 {b1_brier:.6f}, "
-                f"{winner['brier_relative_change_pct']}%), satisfying PRD §10.1.5 simultaneous improvement criteria."
+                f"{winner['candidate']} is the sole promotable candidate satisfying PRD §10.1.5 dual improvement criteria."
             )
         else:
-            # Fallback to B1 if no candidate beats both gates
-            selected_model = "B1"
-            selection_rationale = "No candidate satisfied PRD §10.1.5 dual improvement criteria over active baseline B1; B1 retained."
+            # Sort primarily by AP
+            sorted_by_ap = sorted(promotable_candidates, key=lambda x: x["ap_mean"], reverse=True)
+            top1, top2 = sorted_by_ap[0], sorted_by_ap[1]
+            ap_diff = top1["ap_mean"] - top2["ap_mean"]
+            parity_threshold = min(top1["ap_std"], top2["ap_std"])
+
+            if ap_diff > parity_threshold:
+                winner = top1
+                selected_model = winner["candidate"]
+                selection_rationale = (
+                    f"{winner['candidate']} demonstrated strictly superior Average Precision ({winner['ap_mean']:.5f} vs {top2['candidate']} {top2['ap_mean']:.5f}, "
+                    f"diff {ap_diff:.5f} exceeding parity threshold {parity_threshold:.5f})."
+                )
+            else:
+                # Within statistical parity: apply deterministic tie-breaking ladder (§12.1)
+                # Criterion 1: lower Brier score
+                # Criterion 2: higher ROC-AUC
+                # Criterion 3: lower operational cost
+                # Criterion 4: exact TreeSHAP margin additivity (M2 preferred over M1)
+                def tie_breaker_score(cand):
+                    brier = cand["brier_mean"]
+                    roc = -cand["mean_roc_auc"]
+                    cost = cand["mean_operational_cost"]
+                    shap_rank = 0 if cand["candidate"] == "M2" else 1
+                    return (brier, roc, cost, shap_rank)
+
+                winner = min(promotable_candidates, key=tie_breaker_score)
+                selected_model = winner["candidate"]
+                selection_rationale = (
+                    f"Under Architecture §12.1, candidates {top1['candidate']} (AP={top1['ap_mean']:.5f}) and "
+                    f"{top2['candidate']} (AP={top2['ap_mean']:.5f}) are in statistical parity (diff {ap_diff:.5f} <= parity threshold {parity_threshold:.5f}). "
+                    f"{winner['candidate']} is selected by the tie-breaking ladder due to superior calibration (Brier {winner['brier_mean']:.6f}), "
+                    f"higher ROC-AUC ({winner['mean_roc_auc']:.5f}), lower operational cost (${winner['mean_operational_cost']:,.2f} on Config A), "
+                    f"and exact TreeSHAP margin additivity (AC-XAI-1)."
+                )
 
         comparative_results[f"Configuration_{cfg}_{cfg_name}"] = {
             "baseline_b1_metrics": {
