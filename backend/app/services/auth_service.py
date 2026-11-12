@@ -18,6 +18,8 @@ from backend.app.config import settings
 from backend.app.models.auth import Organisation, User, RefreshToken, Plant
 
 ph = PasswordHasher()
+# Verified against when the email is unknown so unknown-user and wrong-password logins take similar time
+_DUMMY_HASH = ph.hash("industria-timing-equalisation")
 security = HTTPBearer(auto_error=False)
 
 def hash_password(password: str) -> str:
@@ -159,6 +161,7 @@ def login_user(db: Session, email: str, password: str) -> dict:
     """
     user = db.query(User).filter(User.email == email.lower()).first()
     if not user:
+        verify_password(password, _DUMMY_HASH)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail={"error": {"code": "UNAUTHENTICATED", "message": "Invalid email or password."}}

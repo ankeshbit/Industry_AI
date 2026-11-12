@@ -132,13 +132,22 @@ def claim_next_job(db: Session, worker_id: str) -> Optional[Job]:
     if not job:
         return None
 
-    job.status = "RUNNING"
-    job.claimed_by = worker_id
-    job.started_at = now
-    job.heartbeat_at = now
-    job.attempt += 1
-    job.current_step = "CLAIMED"
+    # Atomic compare-and-set: the UPDATE only matches while the row is still QUEUED, so two workers
+    # (or a worker racing the API fast-path) can never both claim the same job (AC-JOB-1).
+    claimed = db.query(Job).filter(Job.id == job.id, Job.status == "QUEUED").update(
+        {
+            "status": "RUNNING",
+            "claimed_by": worker_id,
+            "started_at": now,
+            "heartbeat_at": now,
+            "attempt": Job.attempt + 1,
+            "current_step": "CLAIMED",
+        },
+        synchronize_session=False,
+    )
     db.commit()
+    if claimed != 1:
+        return None
     db.refresh(job)
     return job
 

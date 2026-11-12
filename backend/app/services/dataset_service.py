@@ -8,6 +8,7 @@ import os
 import io
 import re
 import uuid
+import codecs
 import hashlib
 from datetime import datetime, timedelta
 from typing import List, Dict, Any, Optional, Tuple
@@ -62,6 +63,14 @@ FORBIDDEN_COLUMNS = {
     "machine_failure", "machine failure", "twf", "hdf", "pwf", "osf", "rnf",
     "udi", "product_id", "product id"
 }
+
+def _detect_delimiter(file_bytes: bytes, filename: str) -> str:
+    """.tsv files, or files whose header line has more tabs than commas, are tab-delimited."""
+    if filename.lower().endswith(".tsv"):
+        return "\t"
+    header = file_bytes[:4096].decode("utf-8-sig", errors="ignore").split("\n", 1)[0]
+    return "\t" if header.count("\t") > header.count(",") else ","
+
 
 def create_dataset(
     db: Session,
@@ -179,8 +188,10 @@ def upload_dataset_version_stream(
         return existing_version, True  # already exists
 
     # 6. Parse CSV content to verify structure
+    # utf-8-sig: tolerate an Excel UTF-8 BOM explicitly rather than relying on the parser's behaviour.
+    delimiter = _detect_delimiter(file_bytes, filename)
     try:
-        df = pd.read_csv(io.BytesIO(file_bytes), nrows=settings.MAX_CSV_ROWS + 1)
+        df = pd.read_csv(io.BytesIO(file_bytes), sep=delimiter, encoding="utf-8-sig", nrows=settings.MAX_CSV_ROWS + 1)
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
@@ -214,8 +225,17 @@ def upload_dataset_version_stream(
     storage_path = storage_abs_dir / f"{file_uuid}.csv"
     storage_key = f"{storage_rel_dir}/{file_uuid}.csv"
 
+    # Every later stage re-reads the stored file with pd.read_csv() (comma, utf-8). Store a normalised copy so
+    # TSV uploads (previously parsed as ONE column downstream) work and BOMs are dropped; the SHA-256 recorded
+    # above stays that of the original upload so de-duplication is unaffected.
+    if delimiter != ",":
+        stored_bytes = df.to_csv(index=False).encode("utf-8")
+    elif file_bytes.startswith(codecs.BOM_UTF8):
+        stored_bytes = file_bytes[len(codecs.BOM_UTF8):]
+    else:
+        stored_bytes = file_bytes
     with open(storage_path, "wb") as f:
-        f.write(file_bytes)
+        f.write(stored_bytes)
 
     # 9. Create DatasetVersion
     dv = DatasetVersion(
@@ -351,16 +371,39 @@ def compute_quality_score_and_report(
 
     # 2. S_valid: fraction of cells that parse and lie in plausible physical ranges
     numeric_cols = [c for c in eval_cols if pd.api.types.is_numeric_dtype(df[c])]
+
+    # Physical lower bounds per mapped column: (bound, strict). Temperatures must be above absolute zero in
+    # their declared unit; speed, torque and tool wear cannot be negative. Unmapped columns keep the coarse rule.
+    physical_bounds: Dict[str, Tuple[float, bool]] = {}
+    if mapping_obj and mapping_obj.mappings:
+        for canon, spec in mapping_obj.mappings.items():
+            col = spec.get("column")
+            if canon in ("air_temperature", "process_temperature"):
+                bound = {"K": 0.0, "degC": -273.15, "degF": -459.67}.get(spec.get("unit"))
+                if bound is not None and col:
+                    physical_bounds[col] = (bound, True)
+            elif canon in ("rotational_speed", "torque", "tool_wear") and col:
+                physical_bounds[col] = (0.0, False)
+
     if numeric_cols:
         invalid_count = 0
         for col in numeric_cols:
             s = df[col].dropna()
-            # Basic sanity: temperatures > 0 K, speed >= 0, torque >= 0, wear >= 0
-            # If values are negative where physically impossible, count as invalid
-            invalids = (s < -100).sum()
+            if col in physical_bounds:
+                bound, strict = physical_bounds[col]
+                invalids = (s <= bound).sum() if strict else (s < bound).sum()
+            else:
+                invalids = (s < -100).sum()
             invalid_count += int(invalids)
         total_num_cells = total_rows * len(numeric_cols)
         s_valid = max(0.0, 1.0 - (invalid_count / total_num_cells)) if total_num_cells > 0 else 1.0
+        if invalid_count > 0:
+            checks.append({
+                "code": "W_INVALID_VALUES",
+                "severity": "WARNING",
+                "count": invalid_count,
+                "message": f"Found {invalid_count} values outside physically plausible ranges (e.g. negative speed, torque or tool wear, or temperatures below absolute zero)."
+            })
     else:
         s_valid = 1.0
 

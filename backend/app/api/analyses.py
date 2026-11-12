@@ -15,6 +15,7 @@ from backend.app.models.compatibility import CompatibilityCheck
 from backend.app.models.analysis import AnalysisResult
 from backend.app.models.dataset import Dataset, DatasetVersion
 from backend.app.models.model import ModelVersion
+from backend.app.models.compatibility import WarningAcknowledgement, LimitationAcknowledgement
 from backend.app.api.deps import get_current_user
 from backend.app.services.compatibility_service import verify_job_creation_gate
 from backend.app.services.queue_service import enqueue_job, execute_job_synchronous
@@ -93,6 +94,53 @@ def format_analysis_result(res: AnalysisResult, db: Session) -> Dict[str, Any]:
         "created_at": res.created_at.isoformat()
     }
 
+def _record_acknowledgements(db: Session, user: User, check: CompatibilityCheck) -> None:
+    """
+    Persist the warning/limitation acknowledgements that authorised this run (PRD §8.4.7, AC-CE-4, AC-AP-5).
+    The UI sends them inline with the run request and never calls the dedicated acknowledge endpoints, so
+    without this the audit tables stayed empty even though users had acknowledged.
+    """
+    already = {
+        a.reason_code
+        for a in db.query(WarningAcknowledgement).filter(
+            WarningAcknowledgement.compatibility_check_id == check.id,
+            WarningAcknowledgement.organisation_id == user.organisation_id,
+        )
+    }
+    for r in check.reasons:
+        code = r.get("code")
+        if r.get("severity") == "WARNING" and code not in already:
+            db.add(WarningAcknowledgement(
+                organisation_id=user.organisation_id,
+                compatibility_check_id=check.id,
+                reason_code=code,
+                acknowledged_by=user.id,
+            ))
+            already.add(code)
+
+    model = db.query(ModelVersion).filter(
+        ModelVersion.profile_uuid == check.profile_uuid, ModelVersion.stage == "PRODUCTION"
+    ).first()
+    model_id = model.id if model else None
+    existing = db.query(LimitationAcknowledgement).filter(
+        LimitationAcknowledgement.organisation_id == user.organisation_id,
+        LimitationAcknowledgement.machine_id == check.machine_id,
+        LimitationAcknowledgement.profile_uuid == check.profile_uuid,
+        LimitationAcknowledgement.model_version_id == model_id,
+        LimitationAcknowledgement.statement_version == "1.0.0",
+    ).first()
+    if not existing:
+        db.add(LimitationAcknowledgement(
+            organisation_id=user.organisation_id,
+            machine_id=check.machine_id,
+            profile_uuid=check.profile_uuid,
+            model_version_id=model_id,
+            statement_version="1.0.0",
+            acknowledged_by=user.id,
+        ))
+    db.commit()
+
+
 @router.post("/analyses", status_code=status.HTTP_202_ACCEPTED)
 def request_analysis(
     req: CreateAnalysisRequest,
@@ -115,6 +163,8 @@ def request_analysis(
         acknowledged_reason_codes=req.acknowledged_reason_codes,
         limitation_acknowledged=req.limitation_acknowledged
     )
+
+    _record_acknowledgements(db, current_user, check)
 
     # Enqueue job
     payload = {

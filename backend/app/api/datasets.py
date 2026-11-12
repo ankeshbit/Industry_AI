@@ -7,6 +7,7 @@ from pydantic import BaseModel, Field
 from fastapi import APIRouter, Depends, status, HTTPException, UploadFile, File
 from sqlalchemy.orm import Session
 
+from backend.app.config import settings
 from backend.app.database import get_db
 from backend.app.models.auth import User
 from backend.app.models.dataset import Dataset, DatasetVersion, ColumnMapping, ValidationReport
@@ -107,7 +108,7 @@ def get_dataset_details(
                 "column_count": v.column_count,
                 "created_at": v.created_at.isoformat()
             }
-            for v in d.versions
+            for v in sorted(d.versions, key=lambda v: v.version_no)
         ]
     }
 
@@ -125,7 +126,8 @@ async def upload_dataset_file(
     - Computes SHA-256 and deduplicates
     - Ingests schema and computes baseline validation report
     """
-    file_bytes = await file.read()
+    # Read at most limit+1 bytes: enough to detect an oversize upload (413) without buffering a huge body in memory
+    file_bytes = await file.read(settings.MAX_UPLOAD_SIZE_BYTES + 1)
     dv, is_dedup = upload_dataset_version_stream(
         db=db,
         org_id=current_user.organisation_id,

@@ -12,6 +12,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.exceptions import RequestValidationError
 from starlette.exceptions import HTTPException  # base class: also catches routing 404/405
 
+import backend.app.models  # noqa: F401  (registers all tables on Base.metadata before create_all)
 from backend.app.config import settings
 from backend.app.database import engine, Base, SessionLocal
 from backend.app.seed import seed_database

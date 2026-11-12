@@ -4,6 +4,7 @@ Supports PostgreSQL for production with SQLite fallback for local test execution
 Enforces foreign key checks and provides TenantContext binding.
 """
 
+import sqlite3
 from contextvars import ContextVar
 from typing import Generator, Optional
 import uuid
@@ -30,7 +31,9 @@ engine = create_engine(
 # Enable SQLite foreign key support
 @event.listens_for(Engine, "connect")
 def set_sqlite_pragma(dbapi_connection, connection_record):
-    if settings.DATABASE_URL.startswith("sqlite"):
+    # Decide from the actual DBAPI connection: other engines (e.g. test engines) must also get FK enforcement,
+    # and a PostgreSQL connection must never receive a SQLite PRAGMA.
+    if isinstance(dbapi_connection, sqlite3.Connection):
         cursor = dbapi_connection.cursor()
         cursor.execute("PRAGMA foreign_keys=ON")
         cursor.close()

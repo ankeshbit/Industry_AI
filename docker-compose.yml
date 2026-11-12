@@ -28,7 +28,7 @@ services:
     environment:
       DATABASE_URL: postgresql://industria_app:industria_dev_password@db:5432/industria_ai
       MULTI_ORG_ENABLED: "false"
-      SECRET_KEY: industria-ai-dev-secret-key-change-in-production-1234567890
+      SECRET_KEY: ${SECRET_KEY:-industria-ai-dev-secret-key-change-in-production-1234567890}
     ports:
       - "8000:8000"
     volumes:
@@ -52,7 +52,7 @@ services:
     environment:
       DATABASE_URL: postgresql://industria_app:industria_dev_password@db:5432/industria_ai
       MULTI_ORG_ENABLED: "false"
-      SECRET_KEY: industria-ai-dev-secret-key-change-in-production-1234567890
+      SECRET_KEY: ${SECRET_KEY:-industria-ai-dev-secret-key-change-in-production-1234567890}
     volumes:
       - ./storage:/app/storage
     depends_on:

@@ -6,6 +6,9 @@ Loads environment settings with strict validation and safe defaults.
 import os
 from pathlib import Path
 
+_DEFAULT_SECRET_KEY = "industria-ai-dev-secret-key-change-in-production-1234567890"
+
+
 class Settings:
     PROJECT_NAME: str = "INDUSTRIA AI"
     API_V1_PREFIX: str = "/api/v1"
@@ -15,7 +18,8 @@ class Settings:
     MULTI_ORG_ENABLED: bool = os.getenv("MULTI_ORG_ENABLED", "false").lower() in ("true", "1")
     
     # Security & Tokens (PRD v1.2 §15, SEC-01..SEC-05)
-    SECRET_KEY: str = os.getenv("SECRET_KEY", "industria-ai-dev-secret-key-change-in-production-1234567890")
+    APP_ENV: str = os.getenv("APP_ENV", "development").lower()
+    SECRET_KEY: str = os.getenv("SECRET_KEY", _DEFAULT_SECRET_KEY)
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 15
     REFRESH_TOKEN_EXPIRE_DAYS: int = 7
@@ -34,6 +38,10 @@ class Settings:
     MAX_CSV_ROWS: int = 500000
 
 settings = Settings()
+
+# JWTs are signed with SECRET_KEY: running production with the publicly known default lets anyone forge tokens.
+if settings.APP_ENV == "production" and settings.SECRET_KEY == _DEFAULT_SECRET_KEY:
+    raise RuntimeError("SECRET_KEY must be set to a strong secret when APP_ENV=production.")
 
 # Ensure local storage directory exists
 settings.STORAGE_DIR.mkdir(parents=True, exist_ok=True)
