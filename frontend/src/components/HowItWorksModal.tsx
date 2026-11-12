@@ -33,14 +33,14 @@ export const HowItWorksModal: React.FC<HowItWorksModalProps> = ({
 
   const slides = [
     {
-      title: "1. Operating Telemetry Ingestion & Quality Scanning",
-      subtitle: "Canonical Physical Units & Automated Schema Mapping",
+      title: "1. Upload Machine Operating Datasets",
+      subtitle: "Dataset-Driven SaaS • Historical & Batch CSV Ingestion",
       icon: Database,
       accent: "text-sky-600 bg-sky-50 border-sky-200",
       content: (
         <div className="space-y-4 text-xs text-slate-600">
           <p className="leading-relaxed">
-            INDUSTRIA AI ingests high-frequency operating telemetry from industrial machine tools (milling centers, CNC lathes, spindles).
+            INDUSTRIA AI is a <strong>dataset-driven predictive-maintenance SaaS</strong>. Rather than direct IoT or physical machine control, plant engineers upload historical or exported batch CSV operating datasets from supported machinery assets.
           </p>
           <div className="grid grid-cols-2 gap-2.5">
             <div className="p-3 bg-slate-50 rounded-xl border border-slate-200">
@@ -59,49 +59,49 @@ export const HowItWorksModal: React.FC<HowItWorksModalProps> = ({
               <p className="text-[11px] text-slate-500 mt-1">Cumulative cutting tool usage before sharpening or replacement.</p>
             </div>
             <div className="p-3 bg-slate-50 rounded-xl border border-slate-200">
-              <span className="font-bold text-slate-800 text-[11px] block">Quality Score (Q)</span>
+              <span className="font-bold text-slate-800 text-[11px] block">Dataset Quality Score (Q)</span>
               <span className="text-[11px] text-emerald-700 font-semibold font-mono">0 to 100 Quality Metric</span>
-              <p className="text-[11px] text-slate-500 mt-1">Evaluates completeness, monotonic indices, and physical ranges.</p>
+              <p className="text-[11px] text-slate-500 mt-1">Scans completeness, monotonic indices, and valid numerical formats.</p>
             </div>
           </div>
         </div>
       )
     },
     {
-      title: "2. Production ML Inference & Calibrated Risk",
-      subtitle: "M2 Gradient-Boosted Trees (XGBoost) with Platt Scaling",
+      title: "2. Validate & Analyze via Supported ML Pipeline",
+      subtitle: "Domain Applicability Gates & Platt-Calibrated XGBoost",
       icon: Cpu,
       accent: "text-indigo-600 bg-indigo-50 border-indigo-200",
       content: (
         <div className="space-y-4 text-xs text-slate-600">
           <p className="leading-relaxed">
-            Raw telemetry is evaluated through the Stage 3 production model—an ensemble of gradient-boosted decision trees trained and verified under 5-repetition × 5-fold nested cross-validation.
+            Uploaded datasets are validated against reference operating envelopes before running through the Stage 3 production XGBoost model refitted with Platt sigmoid calibration.
           </p>
           <div className="space-y-2.5">
             <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 flex items-start gap-3">
               <div className="w-6 h-6 rounded-lg bg-indigo-100 text-indigo-700 font-bold flex items-center justify-center shrink-0">1</div>
               <div>
-                <span className="font-bold text-slate-800 text-[11px] block">Platt Probability Calibration</span>
+                <span className="font-bold text-slate-800 text-[11px] block">Domain Applicability Pre-Check</span>
                 <p className="text-[11px] text-slate-500 mt-0.5">
-                  Converts tree margins into genuine empirical failure probabilities P(failure | x) ∈ [0, 1] via sigmoid scaling.
+                  Flags Out-of-Distribution (OOD) readings that exceed reference training bounds to alert engineers of extrapolation risks.
                 </p>
               </div>
             </div>
             <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 flex items-start gap-3">
               <div className="w-6 h-6 rounded-lg bg-indigo-100 text-indigo-700 font-bold flex items-center justify-center shrink-0">2</div>
               <div>
-                <span className="font-bold text-slate-800 text-[11px] block">Operational Decision Threshold (T* = 74)</span>
+                <span className="font-bold text-slate-800 text-[11px] block">Platt Probability Calibration</span>
                 <p className="text-[11px] text-slate-500 mt-0.5">
-                  Standard 0.50 cutoff misses rare machine failures. Our optimized threshold alerts at calibrated probability \(\ge 0.1500\), achieving 95.6% failure recall.
+                  Converts raw tree margin scores into calibrated failure probabilities P(failure | z) ∈ [0, 1] using post-hoc logistic scaling.
                 </p>
               </div>
             </div>
             <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 flex items-start gap-3">
               <div className="w-6 h-6 rounded-lg bg-indigo-100 text-indigo-700 font-bold flex items-center justify-center shrink-0">3</div>
               <div>
-                <span className="font-bold text-slate-800 text-[11px] block">Domain Applicability Gate</span>
+                <span className="font-bold text-slate-800 text-[11px] block">Operational Decision Bands (&tau;* = 0.0100)</span>
                 <p className="text-[11px] text-slate-500 mt-0.5">
-                  Verifies that sensor operating ranges stay within valid bounds, flagging Out-of-Distribution (OOD) readings before inferencing.
+                  Threshold bands (HIGH: p &ge; 1.0%, MEDIUM: 0.5% &le; p &lt; 1.0%, LOW: p &lt; 0.5%) are cost-optimized decision thresholds derived from a 50:1 false-negative penalty, not universally validated physical machine health states.
                 </p>
               </div>
             </div>
@@ -110,33 +110,33 @@ export const HowItWorksModal: React.FC<HowItWorksModalProps> = ({
       )
     },
     {
-      title: "3. Explainable TreeSHAP & Maintenance Decisions",
-      subtitle: "Attribution Decompositions & Advisory Plant Interventions",
+      title: "3. Review Failure Risks, Explanations & Reports",
+      subtitle: "TreeSHAP Attributions & Advisory Engineering Decision Support",
       icon: Sparkles,
       accent: "text-amber-600 bg-amber-50 border-amber-200",
       content: (
         <div className="space-y-4 text-xs text-slate-600">
           <p className="leading-relaxed">
-            Every predicted row includes a TreeSHAP local attribution breakdown showing exactly why the model estimated high or low failure risk.
+            Review estimated failure probabilities, inspect feature contributions, and export audit reports. Predictions are decision-support estimates with no implied time horizon and do not execute automated machine shutdowns.
           </p>
           <div className="grid grid-cols-2 gap-2.5">
             <div className="p-3 bg-rose-50 rounded-xl border border-rose-200">
               <span className="font-bold text-rose-800 text-[11px] block">Positive Risk Drivers (+φ)</span>
               <p className="text-[11px] text-rose-700 mt-0.5">
-                Features that pushed the model toward predicting failure (e.g. excessive tool wear or extreme motor torque).
+                Observed sensor values that increased the model failure score relative to baseline prevalence.
               </p>
             </div>
             <div className="p-3 bg-emerald-50 rounded-xl border border-emerald-200">
               <span className="font-bold text-emerald-800 text-[11px] block">Dampening Factors (-φ)</span>
               <p className="text-[11px] text-emerald-700 mt-0.5">
-                Features operating within healthy nominal margins that reduced the predicted risk.
+                Observed operating features in normal ranges that lowered the model failure estimate.
               </p>
             </div>
           </div>
           <div className="p-3 bg-amber-50/70 border border-amber-200 rounded-xl flex items-start gap-2.5 text-amber-900">
             <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
             <div className="text-[11px]">
-              <strong className="font-bold">AC-XAI-2 Advisory Principle:</strong> SHAP values indicate model statistical associations, not physical mechanical causation. Use predictions to prioritize inspection checklists, not as automated shutdown triggers.
+              <strong className="font-bold">Advisory Engineering Decision Support:</strong> SHAP values indicate statistical model associations, not physical mechanical causation. Predictions do not estimate time-to-failure or remaining useful life. Use predictions to prioritize routine physical inspections, never as autonomous emergency shutdown triggers.
             </div>
           </div>
         </div>

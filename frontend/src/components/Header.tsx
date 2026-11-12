@@ -83,7 +83,7 @@ export const Header: React.FC<HeaderProps> = ({
           className="bg-sky-600 hover:bg-sky-700 text-white text-xs font-semibold px-3 py-1.5 rounded-lg flex items-center gap-1.5 shadow-xs transition-colors"
         >
           <UploadCloud className="w-3.5 h-3.5 text-white" />
-          <span className="hidden sm:inline">Upload Telemetry</span>
+          <span className="hidden sm:inline">Upload Dataset</span>
           <span className="sm:hidden">Upload</span>
         </button>
       </div>

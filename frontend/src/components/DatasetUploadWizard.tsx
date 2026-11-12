@@ -246,7 +246,7 @@ export const DatasetUploadWizard: React.FC<DatasetUploadWizardProps> = ({ machin
               </div>
               <p className="text-xs text-slate-500 mt-0.5">
                 {step === 1 
-                  ? 'Select or drag your machine operating CSV telemetry file for schema inspection.'
+                  ? 'Select or drag your machine operating CSV dataset for schema inspection.'
                   : 'Map your sensor columns to AI4I canonical physical dimensions and units.'}
               </p>
             </div>

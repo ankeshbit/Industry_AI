@@ -49,13 +49,13 @@ const NAV_ITEMS: NavItem[] = [
     id: 'dashboard',
     label: 'Dashboard',
     icon: LayoutDashboard,
-    description: 'Fleet health & workspace telemetry overview',
+    description: 'Equipment catalog & dataset analytics overview',
   },
   {
     id: 'datasets',
     label: 'Datasets',
     icon: Database,
-    description: 'Telemetry uploads, schemas & validation',
+    description: 'Dataset uploads, schemas & validation',
   },
   {
     id: 'pipeline',

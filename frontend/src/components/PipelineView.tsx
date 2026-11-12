@@ -69,7 +69,7 @@ export const PipelineView: React.FC<PipelineViewProps> = ({ onNavigateToPredicti
   const PIPELINE_STAGES = [
     {
       step: 1,
-      title: 'Telemetry Ingestion & Mapping',
+      title: 'Dataset Ingestion & Mapping',
       desc: 'CSV header parsing, column type resolution, and missingness verification',
       icon: Database,
     },
@@ -144,7 +144,7 @@ export const PipelineView: React.FC<PipelineViewProps> = ({ onNavigateToPredicti
           </span>
         </div>
         <p className="text-xs text-slate-500 mb-6">
-          Each telemetry batch advances deterministically through 6 sequential execution stages verified by tenant-isolated transactions.
+          Each uploaded dataset batch advances deterministically through 6 sequential execution stages verified by tenant-isolated transactions.
         </p>
 
         {/* Pipeline Stages Stepper */}

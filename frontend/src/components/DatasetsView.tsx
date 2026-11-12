@@ -131,7 +131,7 @@ export const DatasetsView: React.FC<DatasetsViewProps> = ({ onStartUpload }) => 
           <div>
             <h1 className="text-xl font-bold text-slate-900 tracking-tight">Dataset Management</h1>
             <p className="text-xs text-slate-500 mt-0.5">
-              Operating telemetry ingestion, schema conformity, and column mapping history
+              Machine operating dataset ingestion, schema conformity, and column mapping history
             </p>
           </div>
         </div>
@@ -160,7 +160,7 @@ export const DatasetsView: React.FC<DatasetsViewProps> = ({ onStartUpload }) => 
             <div className="flex items-center gap-2">
               <FileSpreadsheet className="w-4 h-4 text-sky-600" />
               <h2 className="text-sm font-bold text-slate-900">
-                AI4I 2020 Standard Telemetry Specification (PRD §8.2.2)
+                AI4I 2020 Supported Operating Dataset Specification (PRD §8.2.2)
               </h2>
             </div>
             <p className="text-xs text-slate-500 mt-1">
@@ -274,8 +274,8 @@ export const DatasetsView: React.FC<DatasetsViewProps> = ({ onStartUpload }) => 
                       <div className="text-sm font-bold text-slate-800">No Operating Datasets Found</div>
                       <p className="text-xs text-slate-500 leading-relaxed">
                         {searchQuery || selectedMachineId !== 'ALL'
-                          ? 'No datasets match your active search or machine filter. Clear your filters or upload a new telemetry batch.'
-                          : 'No telemetry datasets have been ingested yet. Upload your first operating CSV batch or download the canonical sample to begin.'}
+                          ? 'No datasets match your active search or machine filter. Clear your filters or upload a new dataset batch.'
+                          : 'No datasets have been ingested yet. Upload your first operating CSV batch or download the canonical sample to begin.'}
                       </p>
                       <div className="flex items-center justify-center gap-2 pt-1">
                         <button
@@ -350,10 +350,10 @@ export const DatasetsView: React.FC<DatasetsViewProps> = ({ onStartUpload }) => 
           <UploadCloud className="w-6 h-6" />
         </div>
         <h3 className="text-sm font-bold text-slate-800 group-hover:text-sky-900">
-          Upload Operating Telemetry Batch (CSV)
+          Upload Operating Machine Dataset (CSV)
         </h3>
         <p className="text-xs text-slate-500 max-w-md mx-auto mt-1">
-          Drag and drop your milling machine sensor CSV here or click to open the validation and column mapping wizard.
+          Drag and drop your machine operating CSV dataset here or click to open the validation and column mapping wizard.
         </p>
       </div>
     </div>

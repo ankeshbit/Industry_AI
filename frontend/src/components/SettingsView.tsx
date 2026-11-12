@@ -107,7 +107,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ currentUser, onSelec
               System Settings & Asset Inventory
             </h1>
             <p className="text-xs text-slate-500 mt-0.5">
-              Plant machinery registry, tenant organization profile, Neon PostgreSQL telemetry, and ML governance policies.
+              Plant machinery asset registry, tenant organization profile, database infrastructure, and ML governance policies.
             </p>
           </div>
         </div>

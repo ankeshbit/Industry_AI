@@ -114,6 +114,8 @@ export const ReportsView: React.FC = () => {
         nested_cv_provenance: 'Outer folds across 8,000-observation development pool under modal configuration selection (§12.2)',
         historical_test_provenance: 'Exploratory assessment on locked 2,000-observation historical test set (§8.1)',
         status: 'REFERENCE_ONLY',
+        selection_rule_note: 'Multi-Objective Parity Criterion is a post-evaluation governance heuristic (§12.1), not a claim of formal statistical equivalence or significance.',
+        generalization_disclaimer: 'Exploratory benchmark results do not claim industrial plant or customer-level generalization.',
       },
     };
     const blob = new Blob([JSON.stringify(reportData, null, 2)], { type: 'application/json' });
@@ -167,7 +169,7 @@ export const ReportsView: React.FC = () => {
           </h2>
         </div>
         <p className="text-xs text-slate-300 leading-relaxed">
-          Production models in this registry are selected deterministically under the <strong>Multi-Objective Statistical Parity Rule (§12.1)</strong> and refitted on the 8,000-observation development pool with disjoint Sub-Train ($N=5,600$), Calibration ($N=1,200$), and Threshold Validation ($N=1,200$) partitions under modal hyperparameter selection (§12.2). All benchmarks retain explicit <strong>REFERENCE_ONLY</strong> provenance.
+          Production models in this registry are selected under the <strong>Multi-Objective Parity Selection Criterion (§12.1 Formal Addendum)</strong>—a post-evaluation governance heuristic applied when model candidates perform within one standard deviation of Average Precision. This heuristic resolves candidate selection using Brier calibration, ROC-AUC discrimination, and operational cost, without claiming formal statistical equivalence or significance. Models are refitted on the 8,000-observation development pool with disjoint Sub-Train ($N=5,600$), Calibration ($N=1,200$), and Threshold Validation ($N=1,200$) partitions under modal hyperparameter selection (§12.2). All historical test benchmarks retain explicit <strong>REFERENCE_ONLY</strong> exploratory provenance and do not claim customer plant generalization.
         </p>
       </div>
 
@@ -255,14 +257,14 @@ export const ReportsView: React.FC = () => {
                   Exploratory Reference (N=2,000)
                 </span>
                 <h3 className="text-sm font-bold text-slate-900">
-                  Historical Test Set Benchmark Assessment
+                  Historical Test Set Benchmark Assessment (REFERENCE_ONLY)
                 </h3>
               </div>
               <p className="text-[11px] text-slate-500 mt-0.5">
-                Evaluation of refitted production model against the locked 2,000-observation reference partition (68 failures)
+                Exploratory assessment of refitted production model against locked 2,000-observation reference partition (68 failures). Does not claim customer plant generalization.
               </p>
             </div>
-            <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-slate-100 text-slate-700">
+            <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-amber-100 text-amber-900 border border-amber-200">
               REFERENCE_ONLY
             </span>
           </div>

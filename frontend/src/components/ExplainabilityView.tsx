@@ -255,7 +255,7 @@ export const ExplainabilityView: React.FC<ExplainabilityViewProps> = ({
           <div className="px-4 py-3 border-b border-slate-200 bg-slate-50/50 flex items-center justify-between">
             <h3 className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
               <Table className="w-3.5 h-3.5 text-slate-500" />
-              Select Telemetry Row
+              Select Dataset Row
             </h3>
             <span className="text-[10px] text-slate-400 font-mono">
               Top {rows.length} rows
@@ -265,7 +265,7 @@ export const ExplainabilityView: React.FC<ExplainabilityViewProps> = ({
           <div className="divide-y divide-slate-100 max-h-96 overflow-y-auto">
             {rows.length === 0 ? (
               <div className="p-6 text-center text-slate-400 text-xs">
-                No telemetry rows loaded.
+                No dataset rows loaded.
               </div>
             ) : (
               rows.map((r) => {

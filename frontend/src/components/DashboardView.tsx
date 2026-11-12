@@ -160,7 +160,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           <div>
             <h1 className="text-xl font-bold text-slate-900 tracking-tight">Industrial Overview</h1>
             <p className="text-xs text-slate-500 mt-0.5">
-              Real-time fleet health, asynchronous processing status, and calibrated ML metrics
+              Dataset-driven predictive maintenance overview, dataset processing status, and calibrated ML metrics
             </p>
           </div>
         </div>
@@ -176,7 +176,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             onClick={() => onOpenUpload()}
             className="bg-sky-600 hover:bg-sky-700 text-white font-medium px-3.5 py-2 rounded-lg text-xs transition-colors flex items-center gap-1.5 shadow-xs"
           >
-            <UploadCloud className="w-4 h-4" /> Upload Telemetry
+            <UploadCloud className="w-4 h-4" /> Upload Dataset
           </button>
           <button
             onClick={onOpenMachineModal}
@@ -233,10 +233,10 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           </div>
         </div>
 
-        {/* Total Telemetry Batches */}
+        {/* Total Operating Datasets */}
         <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-xs hover:border-slate-300 transition-all">
           <div className="flex items-center justify-between text-slate-500 text-xs font-semibold uppercase tracking-wider mb-2">
-            <span>Telemetry Datasets</span>
+            <span>Operating Datasets</span>
             <div className="p-1.5 rounded-md bg-sky-50 text-sky-700">
               <Database className="w-4 h-4" />
             </div>
@@ -445,10 +445,10 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-xs">
             <h2 className="text-sm font-bold text-slate-800 flex items-center gap-2 mb-3">
               <Activity className="w-4 h-4 text-sky-600" />
-              Fleet Failure Risk Distribution
+              Dataset Failure Risk Distribution
             </h2>
             <p className="text-xs text-slate-500 mb-4">
-              Calibrated out-of-sample risk classification across recent telemetry batches
+              Operational risk classification bands across evaluated dataset batches
             </p>
 
             <div className="space-y-3">
@@ -510,6 +510,10 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                 {totalPredictedFailures} / {totalPredictedRows} ({aggregateFailureRate.toFixed(1)}%)
               </span>
             </div>
+
+            <div className="mt-3 p-2.5 bg-slate-50 border border-slate-200 rounded-lg text-[10px] text-slate-500 leading-relaxed italic">
+              Operational Decision Bands: Risk tiers are cost-calibrated operational threshold bands (&tau;* = 0.0100), not mechanical health certifications. Predictions are statistical estimates without implied time horizons.
+            </div>
           </div>
 
           {/* Quick Actions Card */}
@@ -520,7 +524,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                 Operational Shortcuts
               </h3>
               <p className="text-xs text-slate-400 mt-1">
-                Standard workflows for plant telemetry evaluation
+                Standard workflows for machine dataset evaluation
               </p>
             </div>
 
@@ -530,7 +534,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                 className="w-full bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-xs font-semibold px-3 py-2.5 rounded-lg flex items-center justify-between transition-colors"
               >
                 <span className="flex items-center gap-2">
-                  <UploadCloud className="w-4 h-4 text-sky-400" /> Ingest Operating Telemetry
+                  <UploadCloud className="w-4 h-4 text-sky-400" /> Ingest Operating Dataset
                 </span>
                 <ArrowRight className="w-3.5 h-3.5 text-slate-400" />
               </button>
