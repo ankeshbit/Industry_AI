@@ -197,7 +197,7 @@ export function App() {
           <div className="bg-white border border-slate-200 rounded-2xl max-w-md w-full p-6 shadow-2xl space-y-4">
             <div className="flex items-center justify-between border-b border-slate-100 pb-3">
               <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
-                <UploadCloud className="w-4 h-4 text-sky-600" />
+                <img src="/logo.png" alt="Industry AI" className="w-5 h-5 object-contain" />
                 Select Destination Machinery Asset
               </h3>
               <button

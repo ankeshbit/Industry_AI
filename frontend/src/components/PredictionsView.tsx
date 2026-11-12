@@ -189,11 +189,14 @@ export const PredictionsView: React.FC<PredictionsViewProps> = ({
     <div className="space-y-6 max-w-7xl mx-auto">
       {/* Header and Machine/Analysis Selector */}
       <div className="flex flex-wrap items-center justify-between gap-4 pb-1 border-b border-slate-200">
-        <div>
-          <h1 className="text-xl font-bold text-slate-900 tracking-tight">Predictions & Analytics</h1>
-          <p className="text-xs text-slate-500 mt-0.5">
-            Calibrated operating state evaluations, risk classifications, and confusion matrices
-          </p>
+        <div className="flex items-center gap-3">
+          <img src="/logo.png" alt="Industry AI Logo" className="w-9 h-9 object-contain shrink-0" />
+          <div>
+            <h1 className="text-xl font-bold text-slate-900 tracking-tight">Predictions & Analytics</h1>
+            <p className="text-xs text-slate-500 mt-0.5">
+              Calibrated operating state evaluations, risk classifications, and confusion matrices
+            </p>
+          </div>
         </div>
 
         <div className="flex flex-wrap items-center gap-3">

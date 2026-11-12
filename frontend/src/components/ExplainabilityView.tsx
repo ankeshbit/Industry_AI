@@ -168,11 +168,14 @@ export const ExplainabilityView: React.FC<ExplainabilityViewProps> = ({
     <div className="space-y-6 max-w-7xl mx-auto">
       {/* Header */}
       <div className="flex flex-wrap items-center justify-between gap-4 pb-1 border-b border-slate-200">
-        <div>
-          <h1 className="text-xl font-bold text-slate-900 tracking-tight">Explainability Engine (TreeSHAP)</h1>
-          <p className="text-xs text-slate-500 mt-0.5">
-            Exact Shapley additive feature attributions satisfying PRD §10.6 and AC-XAI-1 invariants
-          </p>
+        <div className="flex items-center gap-3">
+          <img src="/logo.png" alt="Industry AI Logo" className="w-9 h-9 object-contain shrink-0" />
+          <div>
+            <h1 className="text-xl font-bold text-slate-900 tracking-tight">Explainability Engine (TreeSHAP)</h1>
+            <p className="text-xs text-slate-500 mt-0.5">
+              Exact Shapley additive feature attributions satisfying PRD §10.6 and AC-XAI-1 invariants
+            </p>
+          </div>
         </div>
 
         {/* Machine / Run Selector */}

@@ -233,20 +233,23 @@ export const DatasetUploadWizard: React.FC<DatasetUploadWizardProps> = ({ machin
       <div className="bg-white border border-slate-200 rounded-2xl max-w-2xl w-full p-6 shadow-2xl my-8 space-y-5">
         {/* Wizard Header */}
         <div className="flex items-center justify-between border-b border-slate-100 pb-4">
-          <div>
-            <div className="flex items-center gap-2">
-              <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-sky-100 text-sky-800 border border-sky-200 uppercase">
-                Step {step} of 2
-              </span>
-              <h3 className="text-base font-bold text-slate-900">
-                {step === 1 ? 'Dataset Ingestion & Client Preview' : 'Canonical Schema Alignment'}
-              </h3>
+          <div className="flex items-center gap-3">
+            <img src="/logo.png" alt="Industry AI" className="w-8 h-8 object-contain shrink-0" />
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-sky-100 text-sky-800 border border-sky-200 uppercase">
+                  Step {step} of 2
+                </span>
+                <h3 className="text-base font-bold text-slate-900">
+                  {step === 1 ? 'Dataset Ingestion & Client Preview' : 'Canonical Schema Alignment'}
+                </h3>
+              </div>
+              <p className="text-xs text-slate-500 mt-0.5">
+                {step === 1 
+                  ? 'Select or drag your machine operating CSV telemetry file for schema inspection.'
+                  : 'Map your sensor columns to AI4I canonical physical dimensions and units.'}
+              </p>
             </div>
-            <p className="text-xs text-slate-500 mt-1">
-              {step === 1 
-                ? 'Select or drag your machine operating CSV telemetry file for schema inspection.'
-                : 'Map your sensor columns to AI4I canonical physical dimensions and units.'}
-            </p>
           </div>
           <button onClick={onCancel} className="text-slate-400 hover:text-slate-600 p-1 rounded-lg">
             <X className="w-5 h-5" />

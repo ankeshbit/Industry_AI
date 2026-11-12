@@ -100,14 +100,16 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ currentUser, onSelec
     <div className="space-y-6">
       {/* Top Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 border-b border-slate-200 pb-5">
-        <div>
-          <h1 className="text-xl font-bold text-slate-900 tracking-tight flex items-center gap-2">
-            <Sliders className="w-5 h-5 text-sky-600" />
-            System Settings & Asset Inventory
-          </h1>
-          <p className="text-xs text-slate-500 mt-1">
-            Plant machinery registry, tenant organization profile, Neon PostgreSQL telemetry, and ML governance policies.
-          </p>
+        <div className="flex items-center gap-3">
+          <img src="/logo.png" alt="Industry AI Logo" className="w-9 h-9 object-contain shrink-0" />
+          <div>
+            <h1 className="text-xl font-bold text-slate-900 tracking-tight">
+              System Settings & Asset Inventory
+            </h1>
+            <p className="text-xs text-slate-500 mt-0.5">
+              Plant machinery registry, tenant organization profile, Neon PostgreSQL telemetry, and ML governance policies.
+            </p>
+          </div>
         </div>
 
         {/* Tab Switcher */}

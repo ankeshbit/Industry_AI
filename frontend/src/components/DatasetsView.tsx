@@ -126,11 +126,14 @@ export const DatasetsView: React.FC<DatasetsViewProps> = ({ onStartUpload }) => 
     <div className="space-y-6 max-w-7xl mx-auto">
       {/* Page Header */}
       <div className="flex flex-wrap items-center justify-between gap-4 pb-1 border-b border-slate-200">
-        <div>
-          <h1 className="text-xl font-bold text-slate-900 tracking-tight">Dataset Management</h1>
-          <p className="text-xs text-slate-500 mt-0.5">
-            Operating telemetry ingestion, schema conformity, and column mapping history
-          </p>
+        <div className="flex items-center gap-3">
+          <img src="/logo.png" alt="Industry AI Logo" className="w-9 h-9 object-contain shrink-0" />
+          <div>
+            <h1 className="text-xl font-bold text-slate-900 tracking-tight">Dataset Management</h1>
+            <p className="text-xs text-slate-500 mt-0.5">
+              Operating telemetry ingestion, schema conformity, and column mapping history
+            </p>
+          </div>
         </div>
         <div className="flex items-center gap-2">
           <button
