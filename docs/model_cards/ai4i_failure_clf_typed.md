@@ -7,7 +7,7 @@
 - **Pipeline:** `A` (Machine Failure Binary Classification)
 - **Configuration:** `WITH_TYPE` (Profile: `ai4i_failure_with_type@1.0.0`)
 - **Model Architecture:** XGBoost Classifier (`n_estimators=100, max_depth=5, learning_rate=0.05, scale_pos_weight=28.520295, subsample=0.8, colsample_bytree=0.8, eval_metric="logloss", random_state=42`)
-- **Preprocessing Pipeline:** `ColumnTransformer(transformers=[('numeric', StandardScaler(), ['Air temperature [K]', 'Process temperature [K]', 'Rotational speed [rpm]', 'Torque [Nm]', 'Tool wear [min]']), ('categorical', OneHotEncoder(drop='first', sparse_output=False), ['Type'])])`
+- **Preprocessing Pipeline:** `ColumnTransformer(transformers=[('numeric', StandardScaler(), ['Air temperature [K]', 'Process temperature [K]', 'Rotational speed [rpm]', 'Torque [Nm]', 'Tool wear [min]']), ('categorical', OneHotEncoder(handle_unknown='ignore', sparse_output=False), ['Type'])])`
 - **Training Domain:** `REFERENCE_DATASET` (AI4I 2020 Predictive Maintenance Dataset, synthetic)
 - **Training Partition:** 8,000 observations (271 failures, 3.39%), Train index hash: `67471419f2a9a808e27a300667946f2927d7d3b160ea1e4675cabd17cdfc66e8`
 - **Historical Test Partition:** 2,000 observations (68 failures, 3.40%), Test index hash: `8e8fef98bdc3f3d6acd0abe46e342ff4fb29d336aaa77143a3e84b2fef10073b`

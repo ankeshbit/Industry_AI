@@ -167,6 +167,34 @@ def evaluate_compatibility(
                 col_name = mapping_spec.get("column")
                 # Verify column exists in dataset version
                 existing_cols = [c.name for c in dv.columns]
+                col_meta = {c.name: c for c in dv.columns}
+                if col_name in col_meta and req_feat.get("kind") != "categorical" and col_meta[col_name].inferred_type != "numeric":
+                    # Previously this crashed later in convert_to_canonical (astype(float)) with a 500
+                    status_code = "INCOMPATIBLE"
+                    reasons.append({
+                        "code": "E_NON_NUMERIC_COLUMN",
+                        "severity": "ERROR",
+                        "feature": fname,
+                        "observed": col_meta[col_name].inferred_type,
+                        "expected": "numeric",
+                        "message": f"Column '{col_name}' mapped to '{fname}' is not numeric.",
+                        "remedy": "Clean the column (remove text/units from cells) or map a numeric column."
+                    })
+                if col_name in col_meta and req_feat.get("kind") == "categorical" and req_feat.get("allowed_values"):
+                    allowed = {str(v).strip().upper() for v in req_feat["allowed_values"]}
+                    stats = col_meta[col_name].stats or {}
+                    observed = {str(v).strip().upper() for v in stats.get("sample_values", [])}
+                    if stats.get("unique_count", 0) > len(allowed) or not observed <= allowed:
+                        status_code = "INCOMPATIBLE"
+                        reasons.append({
+                            "code": "E_INVALID_CATEGORY_VALUES",
+                            "severity": "ERROR",
+                            "feature": fname,
+                            "observed": sorted(observed),
+                            "expected": sorted(allowed),
+                            "message": f"Column '{col_name}' mapped to '{fname}' contains values outside {sorted(allowed)}.",
+                            "remedy": "Map a column whose values are exactly the AI4I quality variants L/M/H."
+                        })
                 if col_name not in existing_cols:
                     status_code = "INCOMPATIBLE"
                     reasons.append({
@@ -198,6 +226,28 @@ def evaluate_compatibility(
             "message": "Dataset contains 0 rows.",
             "remedy": "Upload a dataset containing valid observation rows."
         })
+
+    # Required-feature completeness gate (profile minimums.required_feature_completeness, default 0.95).
+    # It was declared in every profile but never enforced, so mostly-empty columns reached inference.
+    min_completeness = (doc.get("minimums") or {}).get("required_feature_completeness", 0.0)
+    if min_completeness and dv.row_count and mapping_record and mapping_record.mappings:
+        stats_by_col = {c.name: (c.stats or {}) for c in dv.columns}
+        for req_feat in required_features:
+            spec = mapping_record.mappings.get(req_feat["name"])
+            if not spec or spec.get("column") not in stats_by_col:
+                continue
+            nulls = stats_by_col[spec["column"]].get("null_count", 0)
+            completeness = round(1.0 - nulls / dv.row_count, 4)
+            if completeness < min_completeness:
+                reasons.append({
+                    "code": "E_INSUFFICIENT_COMPLETENESS",
+                    "severity": "ERROR",
+                    "feature": req_feat["name"],
+                    "observed": completeness,
+                    "expected": f">= {min_completeness}",
+                    "message": f"Required feature '{req_feat['name']}' is only {round(completeness * 100, 1)}% populated.",
+                    "remedy": "Fill or remove rows with missing values for this feature and re-upload."
+                })
 
     # Status Precedence (PRD §8.4.2 line 989, AC-CE-2):
     # UNSUPPORTED_FORMAT > INCOMPATIBLE > INSUFFICIENT_DATA > COMPATIBLE_WITH_WARNINGS > COMPATIBLE

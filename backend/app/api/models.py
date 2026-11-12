@@ -29,7 +29,8 @@ def list_models(db: Session = Depends(get_db)):
                 "metric_value": e.metric_value,
                 "ci_low": e.ci_low,
                 "ci_high": e.ci_high,
-                "n_samples": e.n_samples
+                "n_samples": e.n_samples,
+                "subset": e.subset
             }
             for e in m.evaluations
             if e.evaluation_kind == "REFERENCE_DATASET"

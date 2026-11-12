@@ -155,14 +155,30 @@ def acknowledge_warnings(
     if not check:
         raise HTTPException(status_code=404, detail="Compatibility check not found.")
 
-    for code in req.reason_codes:
-        ack = WarningAcknowledgement(
+    # Only warnings that are actually active on this check can be acknowledged (arbitrary codes were accepted),
+    # and repeating a request must not create duplicate audit rows.
+    active = {r["code"] for r in check.reasons if r.get("severity") == "WARNING"}
+    unknown = sorted(set(req.reason_codes) - active)
+    if unknown:
+        raise HTTPException(
+            status_code=422,
+            detail={"error": {"code": "UNKNOWN_WARNING_CODE", "message": "Codes are not active warnings on this check.", "details": unknown}}
+        )
+    already = {
+        a.reason_code for a in db.query(WarningAcknowledgement).filter(
+            WarningAcknowledgement.compatibility_check_id == check.id,
+            WarningAcknowledgement.organisation_id == current_user.organisation_id,
+        )
+    }
+    for code in dict.fromkeys(req.reason_codes):
+        if code in already:
+            continue
+        db.add(WarningAcknowledgement(
             organisation_id=current_user.organisation_id,
             compatibility_check_id=check.id,
             reason_code=code,
             acknowledged_by=current_user.id
-        )
-        db.add(ack)
+        ))
     db.commit()
     return {"message": "Warnings acknowledged successfully.", "acknowledged_codes": req.reason_codes}
 

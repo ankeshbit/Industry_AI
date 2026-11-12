@@ -134,7 +134,7 @@ docker compose up --build
 
 ## 5. Automated Verification & Testing
 
-Run all 49 automated tests across ML baselines, smoke tests, and backend test suites:
+Run the automated test suite (ML baselines, smoke tests, and backend suites):
 
 ```powershell
 .venv\Scripts\python -m pytest

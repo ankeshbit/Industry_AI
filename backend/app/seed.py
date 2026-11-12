@@ -106,6 +106,57 @@ AI4I_WITH_TYPE_DOC = {
     "model_versions": ["ai4i_failure_clf_typed@Production"]
 }
 
+# Reference-dataset evaluation figures, copied from docs/model_cards/*.md (historical 2,000-row test
+# partition, Stage 2B baseline). They previously held different, unsourced numbers and invented
+# confidence intervals, so /models contradicted the model cards. No CIs exist in the cards -> None.
+_TAU = "tau=0.45"
+CARD_EVALUATIONS = {
+    "NO_TYPE": [
+        {"metric_name": "PR-AUC", "metric_value": 0.7734, "subset": None},
+        {"metric_name": "ROC-AUC", "metric_value": 0.9763, "subset": None},
+        {"metric_name": "Brier", "metric_value": 0.0317, "subset": None},
+        {"metric_name": "Precision", "metric_value": 0.4082, "subset": _TAU},
+        {"metric_name": "Recall", "metric_value": 0.8824, "subset": _TAU},
+        {"metric_name": "F1", "metric_value": 0.5581, "subset": _TAU},
+    ],
+    "WITH_TYPE": [
+        {"metric_name": "PR-AUC", "metric_value": 0.7753, "subset": None},
+        {"metric_name": "ROC-AUC", "metric_value": 0.9730, "subset": None},
+        {"metric_name": "Brier", "metric_value": 0.0309, "subset": None},
+        {"metric_name": "Precision", "metric_value": 0.4041, "subset": _TAU},
+        {"metric_name": "Recall", "metric_value": 0.8676, "subset": _TAU},
+        {"metric_name": "F1", "metric_value": 0.5514, "subset": _TAU},
+    ],
+}
+
+
+def _sync_evaluations(db: Session, model_obj: ModelVersion, evals: list) -> None:
+    """Make the stored REFERENCE_DATASET evaluations equal the card values (fixes already-seeded DBs too)."""
+    current = db.query(ModelEvaluation).filter(
+        ModelEvaluation.model_version_id == model_obj.id,
+        ModelEvaluation.evaluation_kind == "REFERENCE_DATASET"
+    ).all()
+    wanted = {(e["metric_name"], e["subset"], e["metric_value"]) for e in evals}
+    have = {(c.metric_name, c.subset, c.metric_value) for c in current}
+    if wanted == have:
+        return
+    for c in current:
+        db.delete(c)
+    db.flush()
+    for ev in evals:
+        db.add(ModelEvaluation(
+            model_version_id=model_obj.id,
+            evaluation_kind="REFERENCE_DATASET",
+            split="test",
+            metric_name=ev["metric_name"],
+            metric_value=ev["metric_value"],
+            ci_low=None,
+            ci_high=None,
+            n_samples=2000,
+            subset=ev["subset"],
+        ))
+
+
 def seed_database(db: Session) -> None:
     """Idempotently seed the global tables with platform profiles and categories."""
     # 1. Machine Categories (PRD v1.2 §8.2.2)
@@ -194,13 +245,7 @@ def seed_database(db: Session) -> None:
             "default_when_both_runnable": False,  # interim default is NO_TYPE per feasibility
             "thresholds": {"optimal_tau": 0.45, "cost_ratio": 50.0},
             "model_card_uri": "docs/model_cards/ai4i_failure_clf_notype.md",
-            "evaluations": [
-                {"split": "test", "metric_name": "PR-AUC", "metric_value": 0.760, "ci_low": 0.690, "ci_high": 0.820, "n_samples": 2000},
-                {"split": "test", "metric_name": "ROC-AUC", "metric_value": 0.945, "ci_low": 0.915, "ci_high": 0.970, "n_samples": 2000},
-                {"split": "test", "metric_name": "Recall", "metric_value": 0.735, "ci_low": 0.630, "ci_high": 0.835, "n_samples": 2000},
-                {"split": "test", "metric_name": "Precision", "metric_value": 0.720, "ci_low": 0.615, "ci_high": 0.820, "n_samples": 2000},
-                {"split": "test", "metric_name": "Brier", "metric_value": 0.021, "ci_low": 0.015, "ci_high": 0.028, "n_samples": 2000},
-            ]
+            "evaluations": CARD_EVALUATIONS["NO_TYPE"],
         },
         {
             "registry_name": "ai4i_failure_clf_typed",
@@ -215,37 +260,20 @@ def seed_database(db: Session) -> None:
             "default_when_both_runnable": False,
             "thresholds": {"optimal_tau": 0.45, "cost_ratio": 50.0},
             "model_card_uri": "docs/model_cards/ai4i_failure_clf_typed.md",
-            "evaluations": [
-                {"split": "test", "metric_name": "PR-AUC", "metric_value": 0.772, "ci_low": 0.705, "ci_high": 0.835, "n_samples": 2000},
-                {"split": "test", "metric_name": "ROC-AUC", "metric_value": 0.948, "ci_low": 0.920, "ci_high": 0.972, "n_samples": 2000},
-                {"split": "test", "metric_name": "Recall", "metric_value": 0.750, "ci_low": 0.645, "ci_high": 0.850, "n_samples": 2000},
-                {"split": "test", "metric_name": "Precision", "metric_value": 0.730, "ci_low": 0.625, "ci_high": 0.830, "n_samples": 2000},
-                {"split": "test", "metric_name": "Brier", "metric_value": 0.020, "ci_low": 0.014, "ci_high": 0.027, "n_samples": 2000},
-            ]
+            "evaluations": CARD_EVALUATIONS["WITH_TYPE"],
         }
     ]
 
     for m in models:
-        existing_model = db.query(ModelVersion).filter(
+        m = dict(m)
+        evals = m.pop("evaluations")
+        model_obj = db.query(ModelVersion).filter(
             ModelVersion.registry_name == m["registry_name"],
             ModelVersion.version == m["version"]
         ).first()
-        if not existing_model:
-            evals = m.pop("evaluations")
+        if not model_obj:
             model_obj = ModelVersion(**m)
             db.add(model_obj)
             db.flush()
-
-            for ev in evals:
-                db.add(ModelEvaluation(
-                    model_version_id=model_obj.id,
-                    evaluation_kind="REFERENCE_DATASET",
-                    split=ev["split"],
-                    metric_name=ev["metric_name"],
-                    metric_value=ev["metric_value"],
-                    ci_low=ev["ci_low"],
-                    ci_high=ev["ci_high"],
-                    n_samples=ev["n_samples"]
-                ))
+        _sync_evaluations(db, model_obj, evals)
     db.commit()
-
