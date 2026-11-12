@@ -12,6 +12,7 @@ import { ReportsView } from './components/ReportsView';
 import { SettingsView } from './components/SettingsView';
 import { DatasetUploadWizard } from './components/DatasetUploadWizard';
 import { CompatibilityModal } from './components/CompatibilityModal';
+import { HowItWorksModal } from './components/HowItWorksModal';
 import { Cpu, UploadCloud, Plus, X, ArrowRight } from 'lucide-react';
 
 export function App() {
@@ -22,6 +23,7 @@ export function App() {
   const [currentSection, setCurrentSection] = useState<NavSection>('dashboard');
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [isMobileNavOpen, setIsMobileNavOpen] = useState(false);
+  const [showHowItWorksModal, setShowHowItWorksModal] = useState(false);
 
   // Workflow & Interactive Inter-View State
   const [activeMachineForUpload, setActiveMachineForUpload] = useState<string | null>(null);
@@ -117,6 +119,7 @@ export function App() {
           activeSection={currentSection}
           onOpenMobile={() => setIsMobileNavOpen(true)}
           onQuickUpload={() => handleOpenQuickUpload()}
+          onOpenHowItWorks={() => setShowHowItWorksModal(true)}
         />
 
         {/* Viewport Content */}
@@ -130,6 +133,7 @@ export function App() {
                 setTargetAnalysisId(resId);
                 setCurrentSection('predictions');
               }}
+              onOpenHowItWorks={() => setShowHowItWorksModal(true)}
             />
           )}
 
@@ -179,8 +183,11 @@ export function App() {
 
         {/* Minimal Footer */}
         <footer className="border-t border-slate-200/80 bg-white/60 py-3.5 px-6 text-center sm:text-left flex flex-col sm:flex-row items-center justify-between text-xs text-slate-500 font-mono">
-          <span>INDUSTRIA AI • Predictive Maintenance Platform • Authoritative PRD v1.2</span>
-          <span className="mt-1 sm:mt-0 text-[11px] text-slate-400">Neon PostgreSQL Serverless • TreeSHAP Explainer</span>
+          <div className="flex items-center gap-2">
+            <img src="/logo.png" alt="Industry AI" className="w-4 h-4 object-contain" />
+            <span>INDUSTRIA AI • Predictive Maintenance Platform • Authoritative PRD v1.2</span>
+          </div>
+          <span className="mt-1 sm:mt-0 text-[11px] text-slate-400">Stage 3 Validated • Pure Software Modular Monolith</span>
         </footer>
       </div>
 
@@ -271,6 +278,13 @@ export function App() {
           }}
         />
       )}
+
+      {/* MODAL 4: How It Works Educational Walkthrough */}
+      <HowItWorksModal
+        isOpen={showHowItWorksModal}
+        onClose={() => setShowHowItWorksModal(false)}
+        onStartUpload={() => handleOpenQuickUpload()}
+      />
     </div>
   );
 }

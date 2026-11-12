@@ -1,5 +1,5 @@
 import React from 'react';
-import { Menu, ChevronRight, Database, Cpu, UploadCloud, CheckCircle2 } from 'lucide-react';
+import { Menu, ChevronRight, Database, Cpu, UploadCloud, CheckCircle2, HelpCircle } from 'lucide-react';
 import { NavSection } from './Sidebar';
 
 interface HeaderProps {
@@ -7,6 +7,7 @@ interface HeaderProps {
   subTitle?: string;
   onOpenMobile: () => void;
   onQuickUpload: () => void;
+  onOpenHowItWorks?: () => void;
 }
 
 const SECTION_TITLES: Record<NavSection, string> = {
@@ -24,6 +25,7 @@ export const Header: React.FC<HeaderProps> = ({
   subTitle,
   onOpenMobile,
   onQuickUpload,
+  onOpenHowItWorks,
 }) => {
   return (
     <header className="h-16 bg-white border-b border-slate-200 sticky top-0 z-30 flex items-center justify-between px-4 sm:px-6">
@@ -36,6 +38,11 @@ export const Header: React.FC<HeaderProps> = ({
         >
           <Menu className="w-5 h-5" />
         </button>
+
+        <div className="flex items-center gap-2 lg:hidden">
+          <img src="/logo.png" alt="Industry AI Logo" className="w-6 h-6 object-contain" />
+          <span className="font-bold text-xs text-slate-900 tracking-tight">INDUSTRIA AI</span>
+        </div>
 
         <nav className="flex items-center gap-1.5 text-xs text-slate-500 font-medium overflow-hidden">
           <span className="text-slate-400 hover:text-slate-600 transition-colors hidden sm:inline">
@@ -56,27 +63,26 @@ export const Header: React.FC<HeaderProps> = ({
         </nav>
       </div>
 
-      {/* Right: Environment Status & Quick Actions */}
+      {/* Right: How It Works & Quick Actions */}
       <div className="flex items-center gap-2 sm:gap-3">
-        {/* Neon DB Status */}
-        <div className="hidden md:flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-emerald-50 border border-emerald-200/80 text-[11px] font-medium text-emerald-800">
-          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-          <Database className="w-3 h-3 text-emerald-600" />
-          <span>Neon PostgreSQL</span>
-        </div>
-
-        {/* Model Engine Badge */}
-        <div className="hidden lg:flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-sky-50 border border-sky-200/80 text-[11px] font-medium text-sky-800">
-          <Cpu className="w-3 h-3 text-sky-600" />
-          <span>M2 XGBoost v3.0.0</span>
-        </div>
+        {/* How It Works Guide Trigger */}
+        {onOpenHowItWorks && (
+          <button
+            onClick={onOpenHowItWorks}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-xs font-semibold text-slate-700 transition-colors shadow-xs"
+            title="Open 3-Step Predictive Maintenance Architecture Guide"
+          >
+            <HelpCircle className="w-3.5 h-3.5 text-sky-600" />
+            <span className="hidden sm:inline">How It Works</span>
+          </button>
+        )}
 
         {/* Quick Upload Action */}
         <button
           onClick={onQuickUpload}
-          className="bg-slate-900 hover:bg-slate-800 text-white text-xs font-semibold px-3 py-1.5 rounded-lg flex items-center gap-1.5 shadow-xs transition-colors"
+          className="bg-sky-600 hover:bg-sky-700 text-white text-xs font-semibold px-3 py-1.5 rounded-lg flex items-center gap-1.5 shadow-xs transition-colors"
         >
-          <UploadCloud className="w-3.5 h-3.5 text-sky-400" />
+          <UploadCloud className="w-3.5 h-3.5 text-white" />
           <span className="hidden sm:inline">Upload Telemetry</span>
           <span className="sm:hidden">Upload</span>
         </button>
@@ -84,3 +90,4 @@ export const Header: React.FC<HeaderProps> = ({
     </header>
   );
 };
+export default Header;

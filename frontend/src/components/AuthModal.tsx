@@ -54,8 +54,8 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onSuccess }) => {
     <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-4 z-50">
       <div className="bg-white border border-slate-200 rounded-2xl max-w-md w-full p-8 shadow-2xl space-y-6">
         <div className="text-center">
-          <div className="w-12 h-12 rounded-xl bg-sky-600 flex items-center justify-center mx-auto mb-3 shadow-md shadow-sky-600/20">
-            <Shield className="w-6 h-6 text-white" />
+          <div className="w-16 h-16 flex items-center justify-center mx-auto mb-3">
+            <img src="/logo.png" alt="Industry AI Logo" className="w-16 h-16 object-contain" />
           </div>
           <h2 className="text-2xl font-bold tracking-tight text-slate-900">INDUSTRIA AI</h2>
           <p className="text-xs text-slate-500 mt-1 uppercase tracking-wider font-medium">

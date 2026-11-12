@@ -263,8 +263,35 @@ export const DatasetsView: React.FC<DatasetsViewProps> = ({ onStartUpload }) => 
                 </tr>
               ) : filteredDatasets.length === 0 ? (
                 <tr>
-                  <td colSpan={5} className="px-5 py-8 text-center text-slate-400">
-                    No operating telemetry datasets match your filter. Click "Upload New Batch" to upload a CSV.
+                  <td colSpan={5} className="px-5 py-12 text-center">
+                    <div className="max-w-md mx-auto space-y-3">
+                      <div className="w-12 h-12 rounded-xl bg-sky-50 text-sky-600 flex items-center justify-center mx-auto border border-sky-100">
+                        <Database className="w-6 h-6" />
+                      </div>
+                      <div className="text-sm font-bold text-slate-800">No Operating Datasets Found</div>
+                      <p className="text-xs text-slate-500 leading-relaxed">
+                        {searchQuery || selectedMachineId !== 'ALL'
+                          ? 'No datasets match your active search or machine filter. Clear your filters or upload a new telemetry batch.'
+                          : 'No telemetry datasets have been ingested yet. Upload your first operating CSV batch or download the canonical sample to begin.'}
+                      </p>
+                      <div className="flex items-center justify-center gap-2 pt-1">
+                        <button
+                          onClick={() => onStartUpload()}
+                          className="bg-sky-600 hover:bg-sky-700 text-white text-xs font-semibold px-3.5 py-2 rounded-lg flex items-center gap-1.5 shadow-xs transition-colors"
+                        >
+                          <UploadCloud className="w-3.5 h-3.5" />
+                          <span>Upload First Dataset</span>
+                        </button>
+                        <a
+                          href="/sample_ai4i_dataset.csv"
+                          download="sample_ai4i_dataset.csv"
+                          className="bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 text-xs font-semibold px-3.5 py-2 rounded-lg flex items-center gap-1.5 shadow-xs transition-colors"
+                        >
+                          <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-600" />
+                          <span>Download Sample CSV</span>
+                        </a>
+                      </div>
+                    </div>
                   </td>
                 </tr>
               ) : (

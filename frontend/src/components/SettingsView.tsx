@@ -314,7 +314,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ currentUser, onSelec
                 <div className="text-slate-500 text-[11px]">Credential Security</div>
                 <div className="font-semibold text-slate-800 mt-0.5 flex items-center gap-1.5">
                   <Lock className="w-3.5 h-3.5 text-emerald-600" />
-                  Argon2id password hashing + 15-minute brute force lockout protection
+                  Enterprise standard credential security + brute force lockout protection
                 </div>
               </div>
             </div>
@@ -336,7 +336,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ currentUser, onSelec
                 <CheckCircle2 className="w-3.5 h-3.5" /> Serverless Pooler Active
               </div>
               <p className="text-[11px] text-slate-500 mt-2 font-mono">
-                ep-divine-glade-bdtu090k-pooler.c-8.us-east-2.aws.neon.tech
+                AWS us-east-2 (Pooled Serverless Endpoint)
               </p>
             </div>
 
@@ -380,8 +380,9 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ currentUser, onSelec
                   <tr>
                     <th className="px-4 py-2.5">Model Identifier</th>
                     <th className="px-4 py-2.5">Configuration</th>
-                    <th className="px-4 py-2.5">Operating Threshold (T*)</th>
-                    <th className="px-4 py-2.5">Platt Intercept / Slope</th>
+                    <th className="px-4 py-2.5">Boosting Rounds (T*)</th>
+                    <th className="px-4 py-2.5">Decision Threshold (&tau;*)</th>
+                    <th className="px-4 py-2.5">Platt Parameters (w, c)</th>
                     <th className="px-4 py-2.5">SHA-256 Hash Integrity</th>
                   </tr>
                 </thead>
@@ -389,19 +390,21 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ currentUser, onSelec
                   <tr>
                     <td className="px-4 py-3 font-bold text-sky-700">ai4i_failure_clf_typed</td>
                     <td className="px-4 py-3 text-slate-700">Config A (WITH_TYPE, 6 features)</td>
-                    <td className="px-4 py-3 font-bold text-slate-900">74 (0.1500 probability)</td>
-                    <td className="px-4 py-3 text-slate-600">-3.8407 / +1.0264</td>
+                    <td className="px-4 py-3 font-bold text-slate-900">74 rounds</td>
+                    <td className="px-4 py-3 font-bold text-emerald-700">0.0100 (1.00%)</td>
+                    <td className="px-4 py-3 text-slate-600">w=0.9502, c=-2.2492</td>
                     <td className="px-4 py-3 text-emerald-700 font-semibold flex items-center gap-1">
-                      <CheckCircle2 className="w-3.5 h-3.5" /> 84fe7548c... (Verified)
+                      <CheckCircle2 className="w-3.5 h-3.5" /> caa17fdb... (Verified)
                     </td>
                   </tr>
                   <tr>
                     <td className="px-4 py-3 font-bold text-sky-700">ai4i_failure_clf_notype</td>
                     <td className="px-4 py-3 text-slate-700">Config B (NO_TYPE, 5 features)</td>
-                    <td className="px-4 py-3 font-bold text-slate-900">100 (0.1500 probability)</td>
-                    <td className="px-4 py-3 text-slate-600">-3.6934 / +1.0069</td>
+                    <td className="px-4 py-3 font-bold text-slate-900">100 rounds</td>
+                    <td className="px-4 py-3 font-bold text-emerald-700">0.0100 (1.00%)</td>
+                    <td className="px-4 py-3 text-slate-600">w=0.9701, c=-2.1979</td>
                     <td className="px-4 py-3 text-emerald-700 font-semibold flex items-center gap-1">
-                      <CheckCircle2 className="w-3.5 h-3.5" /> 759f23fa4... (Verified)
+                      <CheckCircle2 className="w-3.5 h-3.5" /> 182f3a58... (Verified)
                     </td>
                   </tr>
                 </tbody>

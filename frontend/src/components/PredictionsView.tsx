@@ -48,6 +48,45 @@ export const PredictionsView: React.FC<PredictionsViewProps> = ({
   const [oodFilter, setOodFilter] = useState<'ALL' | 'IN_RANGE' | 'OOD_WARNING'>('ALL');
   const [sortField, setSortField] = useState<'probability' | 'row_index'>('probability');
   const [sortAsc, setSortAsc] = useState(false);
+  const [currentPage, setCurrentPage] = useState(1);
+  const pageSize = 25;
+
+  const handleExportCSV = () => {
+    if (filteredRows.length === 0) return;
+    const headers = [
+      'Row_Index',
+      'Failure_Probability',
+      'Risk_Class',
+      'OOD_Warning',
+      'Air_Temperature_K',
+      'Process_Temperature_K',
+      'Rotational_Speed_RPM',
+      'Torque_Nm',
+      'Tool_Wear_Min',
+    ];
+    const csvLines = [headers.join(',')];
+    filteredRows.forEach((r) => {
+      const f = r.features || {};
+      csvLines.push([
+        r.row_index,
+        r.failure_probability,
+        r.risk_class,
+        r.ood_warning ? 'TRUE' : 'FALSE',
+        f['Air temperature [K]'] ?? '',
+        f['Process temperature [K]'] ?? '',
+        f['Rotational speed [rpm]'] ?? '',
+        f['Torque [Nm]'] ?? '',
+        f['Tool wear [min]'] ?? '',
+      ].join(','));
+    });
+    const blob = new Blob([csvLines.join('\n')], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `industria_predictions_${selectedAnalysisId ? selectedAnalysisId.slice(0, 8) : 'export'}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
 
   // 1. Initial Load: Machines
   useEffect(() => {
@@ -133,6 +172,9 @@ export const PredictionsView: React.FC<PredictionsViewProps> = ({
       const valB = sortField === 'probability' ? b.failure_probability : b.row_index;
       return sortAsc ? valA - valB : valB - valA;
     });
+
+  const totalPages = Math.ceil(filteredRows.length / pageSize) || 1;
+  const paginatedRows = filteredRows.slice((currentPage - 1) * pageSize, currentPage * pageSize);
 
   // Calculate histogram bins for failure probability distribution (0 to 100% in 10 bins)
   const probabilityBins = Array(10).fill(0);
@@ -310,31 +352,39 @@ export const PredictionsView: React.FC<PredictionsViewProps> = ({
                 })}
               </div>
 
-              <div className="flex items-center justify-center gap-6 mt-4 text-xs">
+              <div className="flex flex-wrap items-center justify-center gap-6 mt-4 text-xs">
                 <span className="flex items-center gap-1.5 text-slate-600">
-                  <span className="w-2.5 h-2.5 rounded-full bg-emerald-500" /> Low Risk (0–10%)
+                  <span className="w-2.5 h-2.5 rounded-full bg-emerald-500" /> Low (p &lt; 0.5% | Nominal)
                 </span>
                 <span className="flex items-center gap-1.5 text-slate-600">
-                  <span className="w-2.5 h-2.5 rounded-full bg-amber-500" /> Medium Risk (10–50%)
+                  <span className="w-2.5 h-2.5 rounded-full bg-amber-500" /> Medium (0.5% &le; p &lt; 1.0% | Advisory)
                 </span>
                 <span className="flex items-center gap-1.5 text-slate-600">
-                  <span className="w-2.5 h-2.5 rounded-full bg-rose-500" /> High Risk (&gt;50%)
+                  <span className="w-2.5 h-2.5 rounded-full bg-rose-500" /> High (p &ge; 1.0% | &tau;* Threshold)
                 </span>
               </div>
+              <p className="text-[10px] text-slate-500 text-center mt-2 italic">
+                Risk tiers are calibrated to the operational decision threshold (&tau;* = {s?.threshold_used ?? 0.0100}) derived from the 50:1 cost ratio benchmark. All scores are advisory.
+              </p>
             </div>
 
             {/* Stage 3 Authoritative Confusion Matrix */}
             <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-xs">
               <div className="flex items-center justify-between mb-3">
-                <h2 className="text-sm font-bold text-slate-900">
-                  Confirmed Benchmark Matrix
-                </h2>
+                <div>
+                  <h2 className="text-sm font-bold text-slate-900">
+                    Historical Benchmark Matrix
+                  </h2>
+                  <span className="text-[10px] font-bold text-amber-700 bg-amber-50 px-1.5 py-0.2 rounded border border-amber-200">
+                    REFERENCE_ONLY
+                  </span>
+                </div>
                 <span className="text-[10px] font-mono font-bold px-1.5 py-0.5 rounded bg-sky-50 text-sky-800 border border-sky-200">
                   N = 2,000
                 </span>
               </div>
               <p className="text-[11px] text-slate-500 mb-4">
-                Evaluation performance on locked historical benchmark under $10,000 FN vs $200 FP cost matrix.
+                Evaluation performance on locked historical benchmark under $10,000 FN vs $200 FP cost matrix (&tau;* = 0.0100).
               </p>
 
               {/* 2x2 Matrix Grid */}
@@ -365,6 +415,10 @@ export const PredictionsView: React.FC<PredictionsViewProps> = ({
               </div>
 
               <div className="mt-4 pt-3 border-t border-slate-100 space-y-1 text-xs">
+                <div className="flex justify-between text-slate-600">
+                  <span>Historical Benchmark AP:</span>
+                  <span className="font-bold text-slate-900 font-mono">0.76165 (Config A) / 0.73822 (Config B)</span>
+                </div>
                 <div className="flex justify-between text-slate-600">
                   <span>Benchmark Recall on Failures:</span>
                   <span className="font-bold text-slate-900">95.59% (65 / 68)</span>
@@ -424,6 +478,16 @@ export const PredictionsView: React.FC<PredictionsViewProps> = ({
                   <option value="IN_RANGE">In Reference Range</option>
                   <option value="OOD_WARNING">OOD Warning</option>
                 </select>
+
+                <button
+                  onClick={handleExportCSV}
+                  disabled={filteredRows.length === 0}
+                  className="px-2.5 py-1 rounded-lg border border-slate-300 bg-white hover:bg-slate-50 text-slate-700 text-xs font-semibold flex items-center gap-1.5 shadow-xs transition-colors disabled:opacity-40"
+                  title="Export Filtered Rows to CSV"
+                >
+                  <Download className="w-3.5 h-3.5 text-slate-500" />
+                  <span>Export CSV</span>
+                </button>
               </div>
             </div>
 
@@ -451,7 +515,7 @@ export const PredictionsView: React.FC<PredictionsViewProps> = ({
                       </td>
                     </tr>
                   ) : (
-                    filteredRows.map((r) => {
+                    paginatedRows.map((r) => {
                       const isHigh = r.risk_class === 'HIGH';
                       const f = r.features;
 
@@ -509,6 +573,34 @@ export const PredictionsView: React.FC<PredictionsViewProps> = ({
                 </tbody>
               </table>
             </div>
+
+            {/* Pagination Bar */}
+            {totalPages > 1 && (
+              <div className="px-5 py-3 border-t border-slate-200 bg-slate-50/50 flex flex-wrap items-center justify-between gap-3 text-xs text-slate-600">
+                <div>
+                  Showing <strong>{(currentPage - 1) * pageSize + 1}</strong> to <strong>{Math.min(currentPage * pageSize, filteredRows.length)}</strong> of <strong>{filteredRows.length}</strong> records
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    disabled={currentPage === 1}
+                    onClick={() => setCurrentPage(currentPage - 1)}
+                    className="px-2.5 py-1 rounded border border-slate-300 bg-white hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed font-medium transition-colors"
+                  >
+                    Previous
+                  </button>
+                  <span className="px-2 font-semibold text-slate-800">
+                    Page {currentPage} of {totalPages}
+                  </span>
+                  <button
+                    disabled={currentPage === totalPages}
+                    onClick={() => setCurrentPage(currentPage + 1)}
+                    className="px-2.5 py-1 rounded border border-slate-300 bg-white hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed font-medium transition-colors"
+                  >
+                    Next
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         </>
       )}

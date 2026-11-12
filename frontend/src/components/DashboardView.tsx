@@ -26,11 +26,14 @@ import {
   ArrowRight,
 } from 'lucide-react';
 
+import { OnboardingChecklist } from './OnboardingChecklist';
+
 interface DashboardViewProps {
   onNavigate: (section: 'dashboard' | 'datasets' | 'pipeline' | 'predictions' | 'explainability' | 'reports' | 'settings') => void;
   onOpenUpload: (machineId?: string) => void;
   onOpenMachineModal: () => void;
   onSelectAnalysis: (resultId: string) => void;
+  onOpenHowItWorks?: () => void;
 }
 
 export const DashboardView: React.FC<DashboardViewProps> = ({
@@ -38,6 +41,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   onOpenUpload,
   onOpenMachineModal,
   onSelectAnalysis,
+  onOpenHowItWorks,
 }) => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -151,11 +155,14 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
     <div className="space-y-6 max-w-7xl mx-auto">
       {/* Title & Quick Actions */}
       <div className="flex flex-wrap items-center justify-between gap-4 pb-1 border-b border-slate-200">
-        <div>
-          <h1 className="text-xl font-bold text-slate-900 tracking-tight">Industrial Overview</h1>
-          <p className="text-xs text-slate-500 mt-0.5">
-            Real-time fleet health, asynchronous processing status, and calibrated ML metrics
-          </p>
+        <div className="flex items-center gap-3">
+          <img src="/logo.png" alt="Industry AI Logo" className="w-9 h-9 object-contain shrink-0" />
+          <div>
+            <h1 className="text-xl font-bold text-slate-900 tracking-tight">Industrial Overview</h1>
+            <p className="text-xs text-slate-500 mt-0.5">
+              Real-time fleet health, asynchronous processing status, and calibrated ML metrics
+            </p>
+          </div>
         </div>
         <div className="flex items-center gap-2">
           <button
@@ -179,6 +186,18 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           </button>
         </div>
       </div>
+
+      {/* First-Time User Experience Onboarding Checklist */}
+      <OnboardingChecklist
+        stats={{
+          totalDatasets: totalDatasetsCount,
+          totalAnalyses: recentAnalyses.length,
+          totalMachines: machines.length,
+        }}
+        onStartUpload={() => onOpenUpload()}
+        onOpenHowItWorks={onOpenHowItWorks || (() => {})}
+        onNavigateToSection={onNavigate}
+      />
 
       {error && (
         <div className="p-3.5 bg-rose-50 border border-rose-200 rounded-xl text-xs text-rose-800 flex items-center justify-between">
@@ -436,7 +455,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
               <div>
                 <div className="flex justify-between text-xs mb-1">
                   <span className="font-medium text-slate-700 flex items-center gap-1.5">
-                    <span className="w-2.5 h-2.5 rounded-full bg-rose-500" /> High Risk (P &ge; 50%)
+                    <span className="w-2.5 h-2.5 rounded-full bg-rose-500" /> High Risk (P &ge; 1.0% | &tau;* Threshold)
                   </span>
                   <span className="font-semibold text-rose-700">{highRiskCount}</span>
                 </div>
@@ -453,7 +472,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
               <div>
                 <div className="flex justify-between text-xs mb-1">
                   <span className="font-medium text-slate-700 flex items-center gap-1.5">
-                    <span className="w-2.5 h-2.5 rounded-full bg-amber-500" /> Medium Risk (10% &le; P &lt; 50%)
+                    <span className="w-2.5 h-2.5 rounded-full bg-amber-500" /> Medium Risk (0.5% &le; P &lt; 1.0% | Advisory Warning)
                   </span>
                   <span className="font-semibold text-amber-700">{mediumRiskCount}</span>
                 </div>
@@ -470,7 +489,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
               <div>
                 <div className="flex justify-between text-xs mb-1">
                   <span className="font-medium text-slate-700 flex items-center gap-1.5">
-                    <span className="w-2.5 h-2.5 rounded-full bg-emerald-500" /> Low Risk (P &lt; 10%)
+                    <span className="w-2.5 h-2.5 rounded-full bg-emerald-500" /> Low Risk (P &lt; 0.5% | Nominal)
                   </span>
                   <span className="font-semibold text-emerald-700">{lowRiskCount}</span>
                 </div>

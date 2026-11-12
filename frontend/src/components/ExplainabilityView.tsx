@@ -141,48 +141,25 @@ export const ExplainabilityView: React.FC<ExplainabilityViewProps> = ({
     },
   ];
 
-  // Derive simulated local SHAP attribution vector for the active row
+  // Extract genuine TreeSHAP local feature attribution from backend response
   const getShapContributions = (row: any) => {
     if (!row) return [];
-    const f = row.features || {};
-    const torque = Number(f['Torque [Nm]'] || 40);
-    const toolWear = Number(f['Tool wear [min]'] || 100);
-    const rpm = Number(f['Rotational speed [rpm]'] || 1500);
-    const procTemp = Number(f['Process temperature [K]'] || 310);
-    const airTemp = Number(f['Air temperature [K]'] || 300);
-
-    // Realistic TreeSHAP local margins relative to baseline mean
-    const torqueShap = (torque - 40) * 0.045;
-    const wearShap = (toolWear - 100) * 0.015;
-    const rpmShap = (1500 - rpm) * 0.0018;
-    const tempDeltaShap = (procTemp - airTemp - 10) * 0.08;
-
-    return [
-      {
-        feature: 'Torque [Nm]',
-        value: `${torque} Nm`,
-        shap: torqueShap,
-        direction: torqueShap >= 0 ? 'INCREASES_RISK' : 'DECREASES_RISK',
-      },
-      {
-        feature: 'Tool wear [min]',
-        value: `${toolWear} min`,
-        shap: wearShap,
-        direction: wearShap >= 0 ? 'INCREASES_RISK' : 'DECREASES_RISK',
-      },
-      {
-        feature: 'Rotational speed [rpm]',
-        value: `${rpm} rpm`,
-        shap: rpmShap,
-        direction: rpmShap >= 0 ? 'INCREASES_RISK' : 'DECREASES_RISK',
-      },
-      {
-        feature: 'Temperature Delta (dT)',
-        value: `${(procTemp - airTemp).toFixed(1)} K`,
-        shap: tempDeltaShap,
-        direction: tempDeltaShap >= 0 ? 'INCREASES_RISK' : 'DECREASES_RISK',
-      },
-    ].sort((a, b) => Math.abs(b.shap) - Math.abs(a.shap));
+    if (row.feature_attributions && typeof row.feature_attributions === 'object') {
+      const f = row.features || {};
+      return Object.entries(row.feature_attributions)
+        .map(([featureName, shapVal]) => {
+          const numVal = Number(shapVal);
+          const rawVal = f[featureName] !== undefined ? `${f[featureName]}` : '—';
+          return {
+            feature: featureName,
+            value: rawVal,
+            shap: numVal,
+            direction: numVal >= 0 ? ('INCREASES_RISK' as const) : ('DECREASES_RISK' as const),
+          };
+        })
+        .sort((a, b) => Math.abs(b.shap) - Math.abs(a.shap));
+    }
+    return [];
   };
 
   const contributions = activeRow ? getShapContributions(activeRow) : [];
@@ -362,6 +339,14 @@ export const ExplainabilityView: React.FC<ExplainabilityViewProps> = ({
           {!activeRow ? (
             <div className="p-8 text-center text-slate-400 text-xs">
               Select a row from the list to display its exact TreeSHAP attribution force values.
+            </div>
+          ) : contributions.length === 0 ? (
+            <div className="p-8 text-center text-slate-500 text-xs bg-slate-50 rounded-xl border border-slate-200 space-y-2">
+              <Sparkles className="w-6 h-6 text-slate-400 mx-auto" />
+              <div className="font-bold text-slate-800">TreeSHAP Attributions Unavailable for this Row</div>
+              <p className="text-[11px] text-slate-500 max-w-md mx-auto">
+                Exact TreeSHAP attributions are computed by the backend inference engine for the top evaluated risk rows in each analysis batch. Select one of the top evaluated rows from the left panel to inspect its force breakdown.
+              </p>
             </div>
           ) : (
             <div className="space-y-4">
