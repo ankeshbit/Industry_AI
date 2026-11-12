@@ -2,6 +2,8 @@
  * API Client for INDUSTRIA AI Backend (PRD v1.2 §13)
  */
 
+import { supabase, isSupabaseConfigured } from './lib/supabase';
+
 // .env.example documents VITE_API_BASE_URL, but it was never read; default keeps the dev proxy / nginx setup working
 const BASE_URL: string = (import.meta.env.VITE_API_BASE_URL as string | undefined) || '/api/v1';
 
@@ -15,6 +17,13 @@ export interface User {
     name: string;
     slug: string;
   };
+}
+
+export interface AuthModeConfig {
+  auth_provider: 'supabase' | 'local';
+  supabase_url?: string | null;
+  supabase_anon_key?: string | null;
+  multi_org_enabled: boolean;
 }
 
 export interface Job {
@@ -228,9 +237,49 @@ export async function request<T>(endpoint: string, options: RequestInit = {}): P
 // Authentication API
 export const api = {
   auth: {
-    register: (data: { organisation_name: string; email: string; full_name: string; password: string }) =>
-      request('/auth/register', { method: 'POST', body: JSON.stringify(data) }),
+    getConfig: () => request<AuthModeConfig>('/auth/config'),
+    register: async (data: { organisation_name: string; email: string; full_name: string; password: string }): Promise<{ message?: string; user?: any }> => {
+      if (isSupabaseConfigured() && supabase) {
+        const { data: sbData, error: sbError } = await supabase.auth.signUp({
+          email: data.email,
+          password: data.password,
+          options: {
+            data: {
+              full_name: data.full_name,
+              organisation_name: data.organisation_name,
+            },
+          },
+        });
+        if (sbError) {
+          throw { message: sbError.message };
+        }
+        if (sbData.session) {
+          localStorage.setItem('access_token', sbData.session.access_token);
+          localStorage.setItem('refresh_token', sbData.session.refresh_token);
+        }
+        return {
+          message: sbData.session
+            ? 'Account registered successfully.'
+            : 'Registration submitted! Please verify your email via the confirmation link sent to your inbox.',
+          user: sbData.user,
+        };
+      }
+      return request<{ message?: string; user?: any }>('/auth/register', { method: 'POST', body: JSON.stringify(data) });
+    },
     login: async (credentials: { email: string; password: string }) => {
+      if (isSupabaseConfigured() && supabase) {
+        const { data: sbData, error: sbError } = await supabase.auth.signInWithPassword({
+          email: credentials.email,
+          password: credentials.password,
+        });
+        if (sbError || !sbData.session) {
+          throw { message: sbError?.message || 'Supabase authentication failed. Please check credentials.' };
+        }
+        localStorage.setItem('access_token', sbData.session.access_token);
+        localStorage.setItem('refresh_token', sbData.session.refresh_token);
+        const user = await api.auth.getMe();
+        return { access_token: sbData.session.access_token, refresh_token: sbData.session.refresh_token, user };
+      }
       const data = await request<{ access_token: string; refresh_token: string; user: User }>('/auth/login', {
         method: 'POST',
         body: JSON.stringify(credentials),
@@ -240,10 +289,12 @@ export const api = {
       return data;
     },
     getMe: () => request<User>('/users/me'),
-    logout: () => {
+    logout: async () => {
+      if (isSupabaseConfigured() && supabase) {
+        await supabase.auth.signOut().catch(() => undefined);
+      }
       const refreshToken = localStorage.getItem('refresh_token');
       if (refreshToken) {
-        // Best-effort server-side revocation of the refresh token family member
         fetch(`${BASE_URL}/auth/logout`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },

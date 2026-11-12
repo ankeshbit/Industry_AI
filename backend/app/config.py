@@ -33,6 +33,15 @@ class Settings:
     MAX_FAILED_LOGIN_ATTEMPTS: int = 5
     LOCKOUT_DURATION_MINUTES: int = 15
     
+    # Supabase Authentication Settings (Hybrid Auth)
+    SUPABASE_URL: str = os.getenv("SUPABASE_URL", "").rstrip("/")
+    SUPABASE_ANON_KEY: str = os.getenv("SUPABASE_ANON_KEY", "")
+    SUPABASE_JWT_SECRET: str = os.getenv("SUPABASE_JWT_SECRET", "")
+    
+    @property
+    def is_supabase_enabled(self) -> bool:
+        return bool(self.SUPABASE_URL and (self.SUPABASE_JWT_SECRET or self.SUPABASE_ANON_KEY))
+    
     # Database (PRD v1.2 §12)
     # Supports PostgreSQL / Neon PostgreSQL with connection pooling and SSL, or SQLite fallback
     _raw_db_url: str = os.getenv("DATABASE_URL", "sqlite:///./industria_ai.db")

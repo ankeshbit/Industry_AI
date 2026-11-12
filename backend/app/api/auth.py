@@ -8,6 +8,7 @@ from fastapi import APIRouter, Depends, status, HTTPException
 from sqlalchemy.orm import Session
 
 from backend.app.database import get_db
+from backend.app.config import settings
 from backend.app.models.auth import User
 from backend.app.api.deps import get_current_user
 from backend.app.services.auth_service import (
@@ -29,6 +30,19 @@ class LoginRequest(BaseModel):
 
 class RefreshRequest(BaseModel):
     refresh_token: str
+
+@router.get("/config", status_code=status.HTTP_200_OK)
+def get_auth_config():
+    """
+    Returns public client authentication configuration (PRD v1.2 §13.2).
+    Allows frontend to dynamically switch between Supabase and Local authentication.
+    """
+    return {
+        "auth_provider": "supabase" if settings.is_supabase_enabled else "local",
+        "supabase_url": settings.SUPABASE_URL if settings.is_supabase_enabled else None,
+        "supabase_anon_key": settings.SUPABASE_ANON_KEY if settings.is_supabase_enabled else None,
+        "multi_org_enabled": settings.MULTI_ORG_ENABLED,
+    }
 
 @router.post("/register", status_code=status.HTTP_201_CREATED)
 def register(req: RegisterRequest, db: Session = Depends(get_db)):

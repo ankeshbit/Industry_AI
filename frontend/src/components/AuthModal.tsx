@@ -1,6 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { api, User } from '../api';
-import { Lock, Building2, User as UserIcon, Mail, AlertCircle, Shield } from 'lucide-react';
+import { isSupabaseConfigured } from '../lib/supabase';
+import { Lock, Building2, User as UserIcon, Mail, AlertCircle, Shield, CheckCircle2, Zap } from 'lucide-react';
 
 interface AuthModalProps {
   onSuccess: (user: User) => void;
@@ -13,11 +14,25 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onSuccess }) => {
   const [fullName, setFullName] = useState('');
   const [orgName, setOrgName] = useState('');
   const [error, setError] = useState<string | null>(null);
+  const [successInfo, setSuccessInfo] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [supabaseActive, setSupabaseActive] = useState(isSupabaseConfigured());
+
+  useEffect(() => {
+    // Check backend auth config as well to detect server-side Supabase configuration
+    api.auth.getConfig()
+      .then((cfg) => {
+        if (cfg.auth_provider === 'supabase' || isSupabaseConfigured()) {
+          setSupabaseActive(true);
+        }
+      })
+      .catch(() => undefined);
+  }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
+    setSuccessInfo(null);
     setLoading(true);
 
     try {
@@ -25,12 +40,20 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onSuccess }) => {
         if (password.length < 12) {
           throw { message: 'Password must be at least 12 characters long.' };
         }
-        await api.auth.register({
+        const regRes = await api.auth.register({
           organisation_name: orgName,
           email,
           full_name: fullName,
           password,
         });
+
+        // If email confirmation is required by Supabase project
+        if (regRes.message && regRes.message.includes('verify your email')) {
+          setSuccessInfo(regRes.message);
+          setTab('login');
+          return;
+        }
+
         const loginData = await api.auth.login({ email, password });
         onSuccess(loginData.user);
       } else {
@@ -61,12 +84,25 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onSuccess }) => {
           <p className="text-xs text-slate-500 mt-1 uppercase tracking-wider font-medium">
             Industrial Predictive Maintenance • PRD v1.2
           </p>
+          <div className="mt-2.5 flex items-center justify-center gap-1.5">
+            {supabaseActive ? (
+              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                <Zap className="w-3 h-3 text-emerald-600" />
+                Supabase Auth Active
+              </span>
+            ) : (
+              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-slate-100 text-slate-600 border border-slate-200">
+                <Shield className="w-3 h-3 text-slate-500" />
+                Local Dev Auth Mode
+              </span>
+            )}
+          </div>
         </div>
 
         {/* Tab Switcher */}
         <div className="flex border-b border-slate-200">
           <button
-            onClick={() => { setTab('login'); setError(null); }}
+            onClick={() => { setTab('login'); setError(null); setSuccessInfo(null); }}
             className={`flex-1 pb-3 text-sm font-medium transition-colors border-b-2 ${
               tab === 'login' 
                 ? 'border-sky-600 text-sky-600 font-semibold' 
@@ -76,7 +112,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onSuccess }) => {
             Sign In
           </button>
           <button
-            onClick={() => { setTab('register'); setError(null); }}
+            onClick={() => { setTab('register'); setError(null); setSuccessInfo(null); }}
             className={`flex-1 pb-3 text-sm font-medium transition-colors border-b-2 ${
               tab === 'register' 
                 ? 'border-sky-600 text-sky-600 font-semibold' 
@@ -86,6 +122,14 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onSuccess }) => {
             Register Plant
           </button>
         </div>
+
+        {/* Success Alert */}
+        {successInfo && (
+          <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-lg text-xs text-emerald-800 flex items-start gap-2">
+            <CheckCircle2 className="w-4 h-4 shrink-0 mt-0.5 text-emerald-600" />
+            <span>{successInfo}</span>
+          </div>
+        )}
 
         {/* Error Alert */}
         {error && (
