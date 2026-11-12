@@ -7,7 +7,14 @@ import os
 from pathlib import Path
 
 _DEFAULT_SECRET_KEY = "industria-ai-dev-secret-key-change-in-production-1234567890"
-
+# Load .env file from project root if available
+try:
+    from dotenv import load_dotenv
+    _env_path = Path(__file__).resolve().parent.parent.parent / ".env"
+    if _env_path.exists():
+        load_dotenv(dotenv_path=_env_path, override=False)
+except ImportError:
+    pass
 
 class Settings:
     PROJECT_NAME: str = "INDUSTRIA AI"
@@ -27,8 +34,13 @@ class Settings:
     LOCKOUT_DURATION_MINUTES: int = 15
     
     # Database (PRD v1.2 §12)
-    # Default to sqlite for instant local test execution, easily overridden by PostgreSQL URL
-    DATABASE_URL: str = os.getenv("DATABASE_URL", "sqlite:///./industria_ai.db")
+    # Supports PostgreSQL / Neon PostgreSQL with connection pooling and SSL, or SQLite fallback
+    _raw_db_url: str = os.getenv("DATABASE_URL", "sqlite:///./industria_ai.db")
+    if _raw_db_url.startswith("postgres://"):
+        _raw_db_url = _raw_db_url.replace("postgres://", "postgresql+psycopg2://", 1)
+    elif _raw_db_url.startswith("postgresql://") and not _raw_db_url.startswith("postgresql+"):
+        _raw_db_url = _raw_db_url.replace("postgresql://", "postgresql+psycopg2://", 1)
+    DATABASE_URL: str = _raw_db_url
     
     # Storage (PRD v1.2 §12.3)
     # Keys always follow org/{organisation_id}/datasets/{id}/v{n}/{uuid}.csv

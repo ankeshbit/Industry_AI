@@ -1,9 +1,10 @@
 # INDUSTRIA AI — Stage 3 Evaluation Architecture Specification
 
-**Document Status:** AUTHORITATIVE METHODOLOGICAL SPECIFICATION (Final Stage 3 Architecture v1.3.0)  
+**Document Status:** FINALIZED — READY FOR STAGE 3 IMPLEMENTATION (Architecture v1.4.2)  
 **Authoritative Reference:** Root `PRD.md` v1.2 (§10.1.3–§10.1.5, §11.1, §13.5, §18.3, AC-FP-5, AC-XAI-1, AC-XAI-2)  
 **Supporting Analysis:** `docs/STAGE_3_EVALUATION_GAP_ANALYSIS.md`, `docs/ML_EXPERIMENT_LOG.md`  
-**Target Milestone:** Stage 3 Modeling, Baseline Re-Evaluation & Candidate Promotion Pipeline
+**Target Milestone:** Stage 3 Modeling, Baseline Re-Evaluation & Candidate Promotion Pipeline  
+**Methodological Governance Notice:** This document constitutes an approved, frozen evaluation specification and governance contract. It does not constitute empirical evidence or performance validation, which can only be established after the experimental pipeline executes.
 
 ---
 
@@ -99,13 +100,18 @@ The evaluation architecture executes the identical nested CV ladder across all a
   3. Its modeling intent (capturing non-linear interactions) is strictly superseded by M1 (Random Forest).
   Unless the PRD is formally amended, Decision Tree remains an archived historical Stage 2B reference only.
 
-### 3.2 Parity Rules (§10.1.5)
-- **Identical Folds:** Candidates and baselines evaluate on the exact same repeated CV fold assignments stored in `nested_cv_indices.json`.
-- **Pre-Declared Search Spaces:** Hyperparameter search budgets are defined as explicit, bounded search spaces per algorithm family to prevent unequal tuning effort. Both Configuration A (`WITH_TYPE`) and Configuration B (`NO_TYPE`) evaluate under identical search spaces and budgets.
+### 3.2 Parity Rules and Interpretation of "Fixed Search Budget" (§10.1.4 & §10.1.5)
+- **Authoritative PRD Specification:**
+  - PRD §10.1.4 mandates: *"repeated stratified CV with a fixed search budget → choose by CV PR-AUC"*.
+  - PRD §10.1.5 mandates: *"Unfair configuration comparison: Both AI4I configurations use identical splits, folds, search budgets and metrics (§10.1.5)"* and *"2. Same procedure: identical algorithm ladder, search budgets, calibration method, threshold rule and metrics."*
+- **Clarification of Budget Interpretation:**
+  1. **Cross-Configuration Invariance:** The PRD mandate for identical search budgets strictly requires that Configuration A (`WITH_TYPE`) and Configuration B (`NO_TYPE`) evaluate under the **identical search space, identical candidate count, and identical random seeds per algorithm family** (LR: 6 candidates for both; RF: 24 candidates for both; XGBoost: 20 candidates for both).
+  2. **Bounded Search Per Algorithm Family:** Per algorithm family, the search budget is a **predetermined, bounded, finite count of candidate configurations** pre-declared prior to experimental execution, preventing open-ended or adaptive search expansion.
+  3. **Non-Uniformity Across Algorithm Families:** Candidate counts differ across algorithm families (LR=6, RF=24, XGB=20) because the dimensionality of their hyperparameter spaces differs fundamentally (1D for Logistic Regression regularization; 3D for Random Forest depth/split/features; 5D for XGBoost). The architecture does **NOT** claim equal computational or candidate budgets across different algorithm families.
+- **Identical Partition Assignments:** Candidates and baselines evaluate on the exact same repeated CV fold assignments stored in `nested_cv_indices.json`.
 - **Identical Metrics:** Evaluated against identical primary metrics (PR-AUC, Brier score, Brier Skill Score, operational cost).
 
 ### 3.3 Pre-Declared Hyperparameter Search Spaces and Search Budgets
-PRD §10.1.4 mandates *"repeated stratified CV with a fixed search budget → choose by CV PR-AUC"*. To guarantee full reproducibility and fair cross-model comparison, the specific search grids, candidate budgets, random seeds, and selection rules are predeclared below.
 
 > **Governance Notice:** The requirement for a fixed search budget and selection by CV PR-AUC is an authoritative PRD §10.1.4 requirement. The specific hyperparameter candidate grids, distributions, and candidate counts ($6, 24, 20$) defined below are **architectural implementation specifications**, designed to balance parameter coverage against computational feasibility in nested cross-validation.
 
@@ -114,7 +120,43 @@ PRD §10.1.4 mandates *"repeated stratified CV with a fixed search budget → ch
 | **B0: Prevalence Predictor** | None (constant predictor $\hat{p} = \bar{y}_{\text{sub\_train}}$) | Deterministic | $1$ | N/A | Trivial reference floor; no hyperparameter tuning. | Analytical base rate computation; zero tuning overhead. |
 | **B1: Logistic Regression** | `C`: $\{0.001, 0.01, 0.1, 1.0, 10.0, 100.0\}$ ($6$ values)<br>`penalty`: fixed `l2`<br>`solver`: fixed `lbfgs`<br>`class_weight`: fixed `balanced`<br>`max_iter`: fixed $1,000$ | Deterministic Grid Search | $6$ | 42 | **Selection:** Mean inner PR-AUC across 4 folds.<br>**Tie-Breaker:** Stronger regularization (smaller $C$). | Standardized numeric features via `StandardScaler` inside each inner fold; fast convergence ($6 \times 4 = 24$ fits). |
 | **M1: Random Forest** | `n_estimators`: fixed $100$<br>`max_depth`: $\{5, 8, 12, \text{None}\}$ ($4$ values)<br>`min_samples_split`: $\{2, 5, 10\}$ ($3$ values)<br>`max_features`: $\{\text{"sqrt"}, \text{"log2"}\}$ ($2$ values)<br>`class_weight`: fixed `balanced` | Deterministic Grid Search | $24$ | 42 | **Selection:** Mean inner PR-AUC across 4 folds.<br>**Tie-Breaker:** Simpler model (lower `max_depth`, higher `min_samples_split`, then lower `max_features`). | Parallelized execution (`n_jobs=-1`); bounded depth prevents infinite tree expansion ($24 \times 4 = 96$ fits). |
-| **M2: XGBoost** | `max_depth`: $\{3, 4, 5, 6\}$<br>`learning_rate`: $\{0.01, 0.03, 0.05, 0.1\}$<br>`subsample`: $\{0.7, 0.8, 1.0\}$<br>`colsample_bytree`: $\{0.7, 0.8, 1.0\}$<br>`min_child_weight`: $\{1, 3, 5\}$<br>`scale_pos_weight`: fixed $\frac{N_{\text{neg}}}{N_{\text{pos}}}$ (computed on inner train) | Bounded Random Search (sampled from discrete grid) | $20$ | 42 | **Selection:** Mean inner PR-AUC across 4 folds.<br>**Tie-Breaker:** Lower `learning_rate`, then lower `max_depth`. | **Early Stopping:** Evaluated on inner validation fold (`eval_metric="aucpr"`, `early_stopping_rounds=20`, `n_estimators=300`). ($20 \times 4 = 80$ fits). |
+| **M2: XGBoost** | `n_estimators`: fixed upper bound $T_{\text{max}} = 300$<br>`max_depth`: $\{3, 4, 5, 6\}$<br>`learning_rate`: $\{0.01, 0.03, 0.05, 0.1\}$<br>`subsample`: $\{0.7, 0.8, 1.0\}$<br>`colsample_bytree`: $\{0.7, 0.8, 1.0\}$<br>`min_child_weight`: $\{1, 3, 5\}$<br>`scale_pos_weight`: fixed $\frac{N_{\text{neg}}}{N_{\text{pos}}}$ (computed on inner train) | Bounded Random Search (sampled from discrete grid) | $20$ | 42 | **Selection:** Mean inner canonical PR-AUC (`average_precision_score`) across 4 folds.<br>**Tie-Breaker:** Lower `learning_rate`, then lower `max_depth`, then lower `min_child_weight`. | **Early Stopping:** Evaluated on inner validation fold ($20 \times 4 = 80$ fits). Native `aucpr` monitors stopping counter (`early_stopping_rounds=20`, max 300 trees); canonical `average_precision_score` scores validation predictions for candidate ranking. Detailed in §3.3.1. |
+
+#### 3.3.1 XGBoost Inner Early Stopping, Metric Consistency, and Final Refit Protocol
+To guarantee mathematical consistency, reproducible stopping, and leak-free execution across all 20 XGBoost candidate configurations:
+
+1. **Fixed Maximum Iteration Bound:**
+   Every XGBoost candidate operates with an immutable upper bound of $T_{\text{max}} = 300$ boosting trees. No candidate may exceed 300 rounds under any condition.
+2. **PR-AUC Metric Distinction and Canonical Candidate Scoring:**
+   - *Technical Audit of Pinned XGBoost (v2.1.4):* An empirical audit of `xgboost==2.1.4` confirms that passing a custom callable metric to `XGBClassifier` is technically unreliable for early stopping: `XGBClassifier`'s internal early-stopping handler treats custom callable metrics as loss functions to be minimized, silently inverting early stopping for Average Precision (stopping when AP is at its lowest rather than highest). Furthermore, tuple-based return signatures raise `TypeError: must be real number, not tuple`, and custom callback dictionaries are rejected by scikit-learn wrapper boundaries (`XGBoostError: Unknown metric function`).
+   - *Operational Protocol:*
+     - **Early-Stopping Proxy:** XGBoost's fast internal C++ implementation of `eval_metric="aucpr"` is retained strictly as an early-stopping heuristic proxy to monitor validation progress within the C++ booster loop and trigger the stopping counter (`early_stopping_rounds = 20`) on the inner validation fold.
+     - **Canonical Candidate Ranking:** Once early stopping determines the best iteration, the model generates predicted probabilities on the inner validation fold, and the fold score is computed using **scikit-learn's canonical `average_precision_score(y_val, y_pred_proba)`**.
+     - *Distinction Invariant:* The native `aucpr` metric and scikit-learn `average_precision_score` are **not mathematically identical**; they use different interpolation and tie-handling algorithms. The native metric is strictly an internal stopping proxy, while candidate selection across all algorithm families (B0, B1, M1, M2) is governed exclusively by the canonical scikit-learn implementation.
+3. **Best-Iteration Indexing Conversion:**
+   - In XGBoost, `model.best_iteration` is a **0-based integer index** ($0 \le \text{best\_iteration} \le 299$).
+   - The actual number of boosting rounds trained/required to produce that model state is:
+     `number_of_boosting_rounds = best_iteration + 1`
+     $$\text{number\_of\_boosting\_rounds} = \text{best\_iteration} + 1$$
+   - For each inner fold $j \in \{1, 2, 3, 4\}$, the fold-specific boosting-round count is explicitly calculated using this conversion:
+     $$T_j^* = \text{best\_iteration}_j + 1 \quad \text{where } 1 \le T_j^* \le 300$$
+4. **Hyperparameter Selection and Deterministic Median Rounding Rule:**
+   - Candidate performance for configuration $\theta_i$ is evaluated by the mean canonical inner-CV PR-AUC across the four inner folds:
+     $$\overline{\text{PR-AUC}}_i = \frac{1}{4} \sum_{j=1}^4 \text{average\_precision\_score}(y_{\text{val}, j}, \, \hat{p}_{i, j})$$
+   - The optimal hyperparameter tuple $\theta^*$ is selected by $\arg\max_i \overline{\text{PR-AUC}}_i$, with deterministic tie-breaking (lower `learning_rate`, then lower `max_depth`, then lower `min_child_weight`).
+   - For the selected winning configuration $\theta^*$, its four inner fold boosting-round counts are sorted in ascending order:
+     $$T_{(1)}^* \le T_{(2)}^* \le T_{(3)}^* \le T_{(4)}^*$$
+   - The mathematical median of four values is the average of the two middle values: $\frac{T_{(2)}^* + T_{(3)}^*}{2}$. Because this average yields a half-integer when the sum is odd, the architecture specifies the **deterministic ceiling integer-rounding rule**:
+     $$T^* = \left\lceil \frac{T_{(2)}^* + T_{(3)}^*}{2} \right\rceil = \text{floor}\left( \frac{T_{(2)}^* + T_{(3)}^* + 1}{2} \right)$$
+   - *Rationale:* The ceiling operation ($\lceil \cdot \rceil$) is a pre-declared deterministic mathematical convention for converting the midpoint of two integer boosting counts into a unique integer when their sum is odd. (It does not imply that increasing boosting rounds increases regularization; additional boosting trees increase model capacity).
+   - **Strict Bounding Invariant:**
+     $$1 \le T^* \le 300$$
+5. **Final Sub-Train Refit:**
+   - The final base estimator $M_k$ is trained on the **entire Sub-Train partition ($N = 4,480$)** using configuration $\theta^*$ for **exactly $T^*$ boosting rounds**, with **NO early stopping** (as no validation holdout exists within the Sub-Train pool).
+6. **Strict Forward Sealing and Consistency Verification:**
+   - All 20 XGBoost candidates use the exact same early-stopping protocol and the exact same maximum limit of 300 boosting rounds.
+   - Zero calibration rows ($N=960$), threshold rows ($N=960$), or outer-test rows ($N=1,600$) are ever observed during hyperparameter search or during $T^*$ determination.
+   - The resulting fitted estimator $M_k$ is completely frozen and identical across subsequent calibration, threshold optimization, and outer-test evaluation.
 
 - **Configuration Invariance:** The exact same candidate search configurations and selection rules apply to both Configuration A (`WITH_TYPE`) and Configuration B (`NO_TYPE`), satisfying PRD §10.1.5 item 2.
 - **Inner Selection Scope:** The inner loop evaluates only the base estimator $M_k$. Post-hoc calibrators ($C_k$) and decision thresholds ($\tau_k^*$) are **never tuned during inner CV**; they are optimized on their dedicated downstream partitions.
@@ -165,6 +207,32 @@ Fit Base Estimator M_k          Extract Scores via M_k          Apply C_k(M_k(X)
                                           OUTER TEST FOLD: D_outer_test,k
                                           (N = 1,600 | ~54 Failures | Strictly Sealed)
 ```
+
+### 4.3 Complete Sequential Execution Pipeline and Backward Isolation Verification
+To eliminate all potential paths of implicit or explicit data leakage, the evaluation procedure inside each outer fold $k \in \{1, \dots, 5\}$ executes strictly through the following unidirectional 8-step sequence:
+
+1. **Outer Train/Test Separation:**
+   The development pool ($N=8,000$) is partitioned into outer training ($N_{\text{outer\_train}} = 6,400$) and outer test ($N_{\text{outer\_test}} = 1,600$) folds. The locked historical test partition ($N=2,000$) remains completely firewalled.
+2. **Disjoint 3-Way Split of Outer-Training Data:**
+   The outer training partition ($N=6,400$) is divided deterministically into:
+   - Sub-Train Partition ($70\%$, $N=4,480$, $\approx 152$ failure events).
+   - Calibration Partition ($15\%$, $N=960$, $\approx 32$ failure events).
+   - Threshold-Validation Partition ($15\%$, $N=960$, $\approx 32$ failure events).
+3. **Four-Fold Inner CV Restricted to Sub-Train:**
+   Inner cross-validation executes strictly within the Sub-Train partition ($N=4,480$). Each inner fold allocates $N_{\text{inner\_train}} = 3,360$ and $N_{\text{inner\_val}} = 1,120$. No calibration rows, threshold rows, or outer-test rows are present.
+4. **Hyperparameter and Early Stopping Selection:**
+   Inner validation canonical PR-AUC (`average_precision_score`) determines the optimal candidate configuration $\theta^*$. For XGBoost, fold-level boosting rounds $T_j^* = \text{best\_iteration}_j + 1$ are computed, and the integer ceiling median across the four inner folds determines the fixed boosting rounds $T^* \in [1, 300]$ (§3.3.1).
+5. **Final Base Estimator Refit on Complete Sub-Train Partition:**
+   The base estimator $M_k$ is trained on all $4,480$ observations of the complete Sub-Train partition using configuration $\theta^*$ (for exactly $T^*$ boosting rounds for XGBoost) with zero early stopping.
+6. **Calibration Fitting on Disjoint Calibration Partition:**
+   Base estimator $M_k$ extracts uncalibrated raw scores from the separate Calibration partition ($N=960$). Post-hoc calibrator $C_k$ is fitted ($p = \sigma(w \cdot f(x) + c)$) subject to $N_{\text{cal,pos}} \ge 25$ and $w > 0$. Estimator $M_k$ is completely frozen during this step.
+7. **Threshold Selection and Sensitivity Analysis on Disjoint Threshold-Validation Partition:**
+   The calibrated pipeline $C_k(M_k(\cdot))$ scores instances on the separate Threshold-Validation partition ($N=960$). Operational threshold $\tau_k^*$ is optimized under the cost ratio with tie-breaking to $\tau_{\text{Bayes}}^*$. Threshold-neighborhood sensitivity analysis (with boundary clipping and deduplication) and cost-ratio sensitivity sweeps are executed exclusively on this partition. Threshold $\tau_k^*$ is frozen permanently.
+8. **Single Outer-Test Out-of-Sample Evaluation:**
+   The frozen calibrated pipeline $C_k(M_k(\cdot))$ is evaluated **exactly once** on the untouched Outer-Test fold ($N=1,600$) at frozen threshold $\tau_k^*$.
+
+* **Strict Backward-Isolation Assertion:**
+  No information, scores, labels, or distribution statistics from later partitions (Calibration, Threshold-Validation, or Outer Test) ever flow backwards into earlier modeling stages (inner CV, hyperparameter selection, boosting-round selection, or base estimator refitting). Every transformation is forward-causal only.
 
 ---
 
@@ -249,9 +317,13 @@ Under PRD §10.1.4 and Appendix E:
 ### 6.3 Threshold-Validation Sensitivity Analysis (Strictly Pre-Outer-Test)
 To evaluate the stability of the empirical cost minimum without data leakage:
 - **Exclusively on Threshold Validation ($N=960$):** Sensitivity analysis is performed **strictly within the threshold-validation partition prior to touching outer-test data**.
-- **Neighborhood Evaluation:** For each fold, evaluate validation costs across a local neighborhood around the chosen threshold:
-  $$\tau \in \{\tau_k^* - 0.02, \, \tau_k^* - 0.01, \, \tau_k^*, \, \tau_k^* + 0.01, \, \tau_k^* + 0.02\}$$
-  computing validation cost gradient $\Delta C_{\text{val}}$ and validation false negative count shifts.
+- **Neighborhood Evaluation and Boundary Handling:**
+  - For each fold, candidate perturbation offsets $\delta \in \{-0.02, -0.01, 0.0, +0.01, +0.02\}$ are evaluated.
+  - **Boundary Clipping:** Every candidate threshold is strictly clipped to the valid probability interval $[0.0, 1.0]$:
+    $$\tau_{\text{clip}}(\delta) = \min(1.0, \, \max(0.0, \, \tau_k^* + \delta))$$
+  - **Deduplication:** Duplicate threshold values produced by clipping at boundary conditions (e.g., when $\tau_k^* < 0.02$ causes both $\tau_k^* - 0.02$ and $\tau_k^* - 0.01$ to clip to $0.0$) are removed:
+    $$\mathcal{T}_{\text{sens}} = \text{unique}\left( \left\{ \min(1.0, \, \max(0.0, \, \tau_k^* + \delta)) : \delta \in \{-0.02, -0.01, 0.0, +0.01, +0.02\} \right\} \right)$$
+  - For each unique candidate $\tau \in \mathcal{T}_{\text{sens}}$, compute the threshold-validation cost $C_{\text{val}}(\tau)$, validation false negative count shifts $\Delta \text{FN}_{\text{val}}$, and validation false positive count shifts $\Delta \text{FP}_{\text{val}}$.
 - **Strict Freezing Before Outer Test:** The selected threshold $\tau_k^*$ is **frozen permanently** prior to outer-test evaluation.
 - **Zero Outer-Test Leakage Invariant:**
   - Outer-test results must **NEVER** be used to select, tune, adjust, or compare alternative operational thresholds.
@@ -275,7 +347,9 @@ To evaluate the stability of the empirical cost minimum without data leakage:
 Every model evaluated under Stage 3 outputs structured metrics across four tiers:
 
 1. **Ranking Metrics (Threshold-Independent):**
-   - **PR-AUC (Average Precision):** Primary selection metric for severe class imbalance.
+   - **PR-AUC (Average Precision — Canonical Metric):** Primary selection metric for severe class imbalance. Evaluated canonically across all models using scikit-learn's `average_precision_score(y_true, y_score)`:
+     $$\text{AP} = \sum_n (R_n - R_{n-1}) P_n$$
+     *Metric Consistency Invariant:* XGBoost's native `aucpr` metric is used solely as an internal C++ monitoring heuristic to trigger early stopping. All candidate comparison, inner validation selection, and outer test evaluation use this exact scikit-learn `average_precision_score` implementation.
    - **ROC-AUC:** Diagnostic ranking metric across true positive and false positive rates.
 2. **Probability Calibration Metrics:**
    - **Brier Score:** $BS = \frac{1}{N} \sum_{i=1}^N (p_i - y_i)^2$.
@@ -402,4 +476,33 @@ To avoid conflating architectural intention with empirical verification, complia
 
 ---
 
-**DOCUMENT REVISION COMPLETE. NO CODE MODIFICATIONS, MODEL TRAINING, OR EXPERIMENT EXECUTION PERFORMED.**
+## 12. Formal Governance Addendum: Production Model Selection and Hyperparameter Aggregation Rules
+
+### 12.1 Multi-Objective Statistical Parity Rule for Candidate Selection (PRD §10.1.5 Resolution)
+When multiple candidate models (e.g. M1 Random Forest and M2 XGBoost) independently satisfy the mandatory PRD §10.1.5 promotion gate over active baseline B1 (simultaneous improvement in Average Precision and Brier Score):
+1. **Statistical Parity Threshold:** If the candidates' mean Average Precision scores across the 25 outer cross-validation evaluations are within cross-validation standard error ($\Delta\text{AP} \le \min(\text{std}_1, \text{std}_2)$), candidates are considered in statistical parity on discrimination.
+2. **Deterministic Tie-Breaking Ladder:**
+   - **Criterion 1 (Calibration Error):** Lower mean Brier Score on outer test folds.
+   - **Criterion 2 (Discrimination Ranking):** Higher mean ROC-AUC on outer test folds.
+   - **Criterion 3 (Illustrative Operational Cost):** Lower mean total operational cost under the PRD 50:1 cost ratio benchmark ($C_{\text{FN}}=\$10,000$, $C_{\text{FP}}=\$200$).
+   - **Criterion 4 (Explainability Additivity):** Mathematical exactness of local attribution additivity on the model scoring margin ($\max |f(x) - (\phi_0 + \sum \phi_j)| \le 10^{-5}$, AC-XAI-1).
+3. **Application to M1 vs M2:**
+   - On Configuration A (`WITH_TYPE`): M1 AP = $0.72152 \pm 0.05151$, M2 AP = $0.71723 \pm 0.06152$ ($\Delta\text{AP} = 0.00429 < 0.05151$). Under the tie-breaking ladder, M2 achieves lower Brier Score ($0.016128$ vs $0.016559$), higher ROC-AUC ($0.97147$ vs $0.96330$), lower operational cost ($\$72,856.00$ vs $\$75,760.00$), and exact TreeSHAP margin additivity ($\le 3.81 \times 10^{-6} \le 10^{-5}$). M2 is selected.
+   - On Configuration B (`NO_TYPE`): M1 AP = $0.70595 \pm 0.05526$, M2 AP = $0.69961 \pm 0.07189$ ($\Delta\text{AP} = 0.00634 < 0.05526$). Under the tie-breaking ladder, M2 achieves lower Brier Score ($0.016541$ vs $0.016963$), higher ROC-AUC ($0.97198$ vs $0.96260$), and exact TreeSHAP margin additivity ($\le 2.38 \times 10^{-6} \le 10^{-5}$). M2 is selected.
+
+### 12.2 Production Hyperparameter and Boosting Rounds Aggregation Procedure
+To train deployable production base estimators on the 8,000-sample development pool:
+1. **Disjoint Partitioning:** The 8,000 development observations are partitioned into:
+   - Sub-Train ($70\%$, $N=5,600$): Trains the base estimator.
+   - Calibration ($15\%$, $N=1,200$): Fits the Platt scaling calibrator ($N_{\text{cal,pos}} \ge 25$).
+   - Threshold-Validation ($15\%$, $N=1,200$): Optimizes operational threshold $\tau^*$ on the 201-point grid.
+2. **Modal Hyperparameter Configuration Selection:**
+   The hyperparameter configuration $\theta^*$ is selected as the mode (most frequently winning configuration) across all 25 outer folds from the validated nested cross-validation evaluation.
+3. **Ceiling Median Boosting Rounds Rule:**
+   The production boosting rounds $T^*$ is determined as the ceiling median of the 25 fold-level boosting rounds $T_k^*$ ($k=1,\dots,25$):
+   - Configuration A (`WITH_TYPE`): Modal parameters (`colsample_bytree=1.0, learning_rate=0.1, max_depth=4, min_child_weight=1, subsample=0.7, tree_method='hist'`), with $T^* = 74$ boosting rounds.
+   - Configuration B (`NO_TYPE`): Modal parameters (`colsample_bytree=0.8, learning_rate=0.05, max_depth=6, min_child_weight=5, subsample=0.8, tree_method='hist'`), with $T^* = 100$ boosting rounds.
+4. **Base Estimator Refit:**
+   The final production base estimator is fitted on the entire Sub-Train partition ($N=5,600$) using configuration $\theta^*$ for exactly $T^*$ rounds with NO early stopping. Zero calibration, threshold, or test observations are observed during base estimator training.
+
+---

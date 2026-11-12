@@ -31,10 +31,20 @@ CANONICAL_TO_MODEL_FEATURE = {
     "product_type": "Type"
 }
 
-MODEL_PATHS = {
-    "NO_TYPE": settings.BASE_DIR / "ml/artifacts/models/EXP-008_xgboost_config_b.joblib",
-    "WITH_TYPE": settings.BASE_DIR / "ml/artifacts/models/EXP-004_xgboost_config_a.joblib"
+PRODUCTION_MODEL_PATHS = {
+    "WITH_TYPE": settings.BASE_DIR / "ml/artifacts/models/production_m2_config_a.joblib",
+    "NO_TYPE": settings.BASE_DIR / "ml/artifacts/models/production_m2_config_b.joblib",
 }
+
+# Alias for backwards compatibility with tests and callers
+MODEL_PATHS = PRODUCTION_MODEL_PATHS
+
+LEGACY_MODEL_PATHS = {
+    "WITH_TYPE": settings.BASE_DIR / "ml/artifacts/models/EXP-004_xgboost_config_a.joblib",
+    "NO_TYPE": settings.BASE_DIR / "ml/artifacts/models/EXP-008_xgboost_config_b.joblib",
+}
+
+_LOADED_BUNDLES: Dict[str, Any] = {}
 
 def execute_analysis(
     db: Session,
@@ -81,28 +91,44 @@ def execute_analysis(
                 canon_unit = "K" if "temperature" in canon_name else "rpm" if "speed" in canon_name else "Nm" if "torque" in canon_name else "min"
                 input_df[model_col_name] = convert_to_canonical(df_raw[col_name], unit_declared, canon_unit)
 
-    # 3. Load trained model pipeline
+    # 3. Load trained model bundle / pipeline
     cfg = profile.configuration
-    model_path = MODEL_PATHS.get(cfg)
+    model_path = PRODUCTION_MODEL_PATHS.get(cfg)
+    if not model_path or not model_path.exists():
+        model_path = LEGACY_MODEL_PATHS.get(cfg)
     if not model_path or not model_path.exists():
         raise HTTPException(status_code=500, detail=f"Model artifact not found for configuration '{cfg}'.")
 
-    model_pipeline = joblib.load(model_path)
+    if str(model_path) not in _LOADED_BUNDLES:
+        _LOADED_BUNDLES[str(model_path)] = joblib.load(model_path)
+    bundle = _LOADED_BUNDLES[str(model_path)]
 
-    # 4. Predict probabilities
-    probabilities = model_pipeline.predict_proba(input_df)[:, 1]
+    if isinstance(bundle, dict):
+        pipeline = bundle["pipeline"]
+        calibrator = bundle.get("calibrator")
+        tau = float(bundle.get("optimal_threshold", 0.01))
+        is_production_bundle = True
+    else:
+        pipeline = bundle
+        calibrator = None
+        tau = 0.45
+        is_production_bundle = False
+
+    # 4. Predict probabilities (using calibrated probabilities when available)
+    if calibrator is not None:
+        probabilities = calibrator.predict_proba(input_df)[:, 1]
+    else:
+        probabilities = pipeline.predict_proba(input_df)[:, 1]
 
     # 5. Determine threshold and assign risk classes
-    # Provisional operational threshold based on asymmetric cost ratio C_FN/C_FP = 50 baseline.
-    # Note: Empirical threshold tuning will be conducted under Stage 3 inner cross-validation.
-    tau = 0.45  # provisional operational threshold
     risk_classes = []
     predicted_failures = 0
+    medium_threshold = 0.5 * tau if is_production_bundle else 0.20
     for p in probabilities:
         if p >= tau:
             risk_classes.append("HIGH")
             predicted_failures += 1
-        elif p >= 0.20:
+        elif p >= medium_threshold:
             risk_classes.append("MEDIUM")
         else:
             risk_classes.append("LOW")
@@ -133,8 +159,12 @@ def execute_analysis(
         "mean_failure_probability": round(float(np.mean(probabilities)), 4),
         "max_failure_probability": round(float(np.max(probabilities)), 4),
         "threshold_used": tau,
-        "threshold_type": "PROVISIONAL",
-        "threshold_note": "Provisional operational threshold (cost ratio C_FN/C_FP=50 baseline). Final empirical threshold will be tuned via Stage 3 inner cross-validation.",
+        "threshold_type": "EMPIRICAL_OPTIMAL" if is_production_bundle else "PROVISIONAL",
+        "threshold_note": (
+            f"Stage 3 empirical out-of-sample optimal decision threshold (tau* = {tau:.4f}) with Bayes tie-breaker under PRD 50:1 cost ratio."
+            if is_production_bundle else
+            "Provisional operational threshold (cost ratio C_FN/C_FP=50 baseline). Final empirical threshold will be tuned via Stage 3 inner cross-validation."
+        ),
         "risk_distribution": {
             "LOW": int((np.array(risk_classes) == "LOW").sum()),
             "MEDIUM": int((np.array(risk_classes) == "MEDIUM").sum()),
@@ -142,10 +172,48 @@ def execute_analysis(
         }
     }
 
-    # 8. Top rows (top 20 highest probabilities)
+    # 8. Top rows (top 20 highest probabilities) with TreeSHAP attributions
     top_indices = np.argsort(probabilities)[::-1][:20]
+    
+    # Compute TreeSHAP attributions for top rows if tree model available
+    shap_matrix = None
+    feature_names_out: List[str] = []
+    explanation_meta = None
+    try:
+        classifier_step = None
+        preprocessor_step = None
+        if hasattr(pipeline, "named_steps"):
+            classifier_step = pipeline.named_steps.get("classifier")
+            preprocessor_step = pipeline.named_steps.get("preprocessor")
+
+        if classifier_step is not None and preprocessor_step is not None and len(top_indices) > 0:
+            import shap
+            X_top = input_df.iloc[top_indices]
+            X_top_trans = preprocessor_step.transform(X_top)
+            explainer = shap.TreeExplainer(classifier_step)
+            shap_matrix = explainer.shap_values(X_top_trans)
+            base_val = float(explainer.expected_value)
+            raw_margin = classifier_step.predict(X_top_trans, output_margin=True)
+            reconstructed = np.sum(shap_matrix, axis=1) + base_val
+            max_delta = float(np.max(np.abs(reconstructed - raw_margin)))
+            feature_names_out = list(preprocessor_step.get_feature_names_out())
+            explanation_meta = {
+                "method": "TreeSHAP",
+                "base_margin_value": round(base_val, 5),
+                "additivity_verified": bool(max_delta <= 1e-5),
+                "max_reconstruction_delta": round(max_delta, 8),
+                "non_causality_disclaimer": "Feature attributions describe model behaviour, not physical causation.",
+                "optimal_threshold": tau,
+            }
+    except Exception as e:
+        explanation_meta = {
+            "method": "FeatureImportance",
+            "error": str(e),
+            "non_causality_disclaimer": "Feature attributions describe model behaviour, not physical causation."
+        }
+
     top_rows = []
-    for idx in top_indices:
+    for i, idx in enumerate(top_indices):
         features = {}
         for k in input_df.columns:
             val = input_df[k].iloc[idx]
@@ -154,13 +222,19 @@ def execute_analysis(
                 features[k] = None if pd.isna(val) else float(val)
             else:
                 features[k] = str(val)
-        top_rows.append({
+        row_obj = {
             "row_index": int(idx),
             "failure_probability": round(float(probabilities[idx]), 4),
             "risk_class": risk_classes[idx],
             "ood_warning": bool(is_ood_array[idx]),
             "features": features
-        })
+        }
+        if shap_matrix is not None and i < len(shap_matrix):
+            row_obj["feature_attributions"] = {
+                fn: round(float(val), 5)
+                for fn, val in zip(feature_names_out, shap_matrix[i])
+            }
+        top_rows.append(row_obj)
 
     # 9. Result versioning
     latest_res = db.query(AnalysisResult).filter(
@@ -182,7 +256,7 @@ def execute_analysis(
     model_record = db.query(ModelVersion).filter(
         ModelVersion.profile_uuid == profile.id,
         ModelVersion.stage == "PRODUCTION"
-    ).first()
+    ).order_by(ModelVersion.promoted_at.desc()).first()
 
     # Create immutable AnalysisResult
     result = AnalysisResult(
@@ -209,9 +283,14 @@ def execute_analysis(
         summary=summary,
         top_rows=top_rows,
         artifact_uri=str(model_path),
+        explanation_meta=explanation_meta,
         limitations=[
+            "Model trained on AI4I 2020 synthetic reference dataset; post-hoc Platt scaling calibration applied on disjoint validation partition."
+            if is_production_bundle else
             "Model trained on AI4I 2020 synthetic reference dataset; formal post-hoc calibration was not applied to baseline weights.",
             "Predictions are advisory model scores, not physical failure frequencies of customer equipment.",
+            f"Operational decision threshold (tau* = {tau:.4f}) optimized under 50:1 cost ratio benchmark ($10,000 / $200) with Bayes tie-breaker."
+            if is_production_bundle else
             "Operational threshold (tau = 0.45) is a provisional baseline setting based on the asymmetric cost ratio C_FN/C_FP = 50; empirical threshold optimization is scheduled for the Stage 3 nested evaluation protocol.",
             "Feature attributions describe model behaviour, not physical causation."
         ],

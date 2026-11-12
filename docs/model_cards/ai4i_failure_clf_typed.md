@@ -66,3 +66,55 @@ All figures below are forensic empirical values extracted directly from `ml/arti
 - **Semantics Requirement:** Using this model requires the customer to assert that their column represents the AI4I manufacturing quality variant. The system never infers or imputes missing types.
 - **Provisional Operational Threshold:** The threshold $\tau = 0.45$ is an empirical heuristic balancing precision and recall on uncalibrated baseline scores. Decision-theoretic cost-optimal thresholding requires genuine probability calibration scheduled for Stage 3.
 - **Explainability Disclaimer:** Feature attributions describe model scoring behavior on the underlying tree margin, not physical causality.
+
+---
+
+## 7. Stage 3 Production Model (v3.0.0 — M2 XGBoost with Platt Scaling)
+
+### A. Production Artifact Details
+- **Registry Name:** `ai4i_failure_clf_typed`
+- **Model Version:** `3.0.0` (Promoted to `PRODUCTION` stage)
+- **Model Family:** M2 XGBoost 2.1.4
+- **Configuration:** `WITH_TYPE` (Profile: `ai4i_failure_with_type`)
+- **Winning Hyperparameters:** `learning_rate=0.1, max_depth=4, min_child_weight=1, colsample_bytree=1.0, subsample=0.7, n_estimators=74, tree_method="hist", random_state=42`
+- **Class Balancing:** `scale_pos_weight = N_neg / N_pos = 28.47` (computed on Sub-Train)
+- **Artifact Path:** `ml/artifacts/models/production_m2_config_a.joblib`
+- **Artifact SHA-256:** `caa17fdb6c6871afdd87c5bd05d1ad5bc5a568e2c94877935bd242fbcb16824a`
+- **Training Domain:** `REFERENCE_DATASET` (Synthetic AI4I 2020)
+- **Reliability Tier:** `REFERENCE_ONLY`
+
+### B. Nested Cross-Validation Performance (Stage 3 Phase 2C: 5 Reps x 5 Folds = 25 Outer Evaluations)
+- **Average Precision (PR-AUC):** **0.71723 ± 0.06152** (Min: 0.60361, Max: 0.82641)
+  - *Vs. B1 Logistic Regression baseline (0.44038):* **+62.9% relative improvement** (satisfies PRD §10.1.5 AP promotion gate).
+- **ROC-AUC:** **0.97147 ± 0.00968** (Min: 0.95385, Max: 0.98663)
+- **Brier Score:** **0.016128 ± 0.001671**
+  - *Vs. B1 Logistic Regression baseline (0.024738):* **-34.8% error reduction** (satisfies PRD §10.1.5 Brier promotion gate).
+- **Brier Skill Score (BSS):** **0.50723 ± 0.05086**
+- **Expected Calibration Error (ECE):** **0.00858 ± 0.00259**
+- **Optimal Threshold ($\tau^*$):** Mean = 0.0308, Min = 0.005, Max = 0.110
+- **Operational Cost at $\tau^*$ (50:1 cost ratio):** **$72,856.00 ± $23,740.93**
+
+### C. Confirmed Historical Benchmark Test Evaluation (N=2,000, 68 Failures, Hash `8e8fef98...`)
+- **Average Precision (PR-AUC):** **0.76165**
+- **ROC-AUC:** **0.96881**
+- **Brier Score:** **0.014822**
+- **Brier Skill Score:** **0.54870**
+- **Optimal Decision Threshold:** $\tau^* = \mathbf{0.0100}$ (Bayes theoretical = 0.01961)
+- **Operational Decision Metrics at $\tau^* = 0.0100$:**
+  - True Positives (TP): 65
+  - False Positives (FP): 236
+  - False Negatives (FN): 3
+  - True Negatives (TN): 1,696
+  - **Recall:** **0.9559** (65 of 68 failures successfully detected)
+  - **Precision:** **0.2159**
+  - **F1-Score:** **0.3523**
+  - **Illustrative Operational Cost:** **$77,200.00** ($3 \times \$10,000 + 236 \times \$200$)
+
+### D. Calibration & Explainability Verification
+- **Platt Sigmoid Calibrator:** Fitted on disjoint Calibration partition ($N = 1,200$, $N_{\text{cal,pos}} = 41 \ge 25$).
+  - Slope ($w$): $0.9502 \pm 0.1068$
+  - Intercept ($c$): $-2.2492 \pm 0.2384$
+- **TreeSHAP Explainability (AC-XAI-1, AC-XAI-2):**
+  - Margin additivity verified: $\max | \sum \phi_j + \phi_0 - f(x) | = 2.86 \times 10^{-6} \le 10^{-5}$ tolerance.
+  - Non-Causality Notice: Feature attributions describe model behaviour, not physical causation.
+

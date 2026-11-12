@@ -1,20 +1,38 @@
 import React, { useState, useEffect } from 'react';
-import { api, User, CompatibilityCheck, AnalysisResult } from './api';
+import { api, User, CompatibilityCheck, AnalysisResult, Machine } from './api';
 import { AuthModal } from './components/AuthModal';
-import { MachineRegistry } from './components/MachineRegistry';
+import { Sidebar, NavSection } from './components/Sidebar';
+import { Header } from './components/Header';
+import { DashboardView } from './components/DashboardView';
+import { DatasetsView } from './components/DatasetsView';
+import { PipelineView } from './components/PipelineView';
+import { PredictionsView } from './components/PredictionsView';
+import { ExplainabilityView } from './components/ExplainabilityView';
+import { ReportsView } from './components/ReportsView';
+import { SettingsView } from './components/SettingsView';
 import { DatasetUploadWizard } from './components/DatasetUploadWizard';
 import { CompatibilityModal } from './components/CompatibilityModal';
-import { AnalysisView } from './components/AnalysisView';
-import { Shield, Building, LogOut, Terminal, Activity } from 'lucide-react';
+import { Cpu, UploadCloud, Plus, X, ArrowRight } from 'lucide-react';
 
 export function App() {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [authChecked, setAuthChecked] = useState(false);
 
-  // Workflow State
+  // Navigation & Shell State
+  const [currentSection, setCurrentSection] = useState<NavSection>('dashboard');
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
+  const [isMobileNavOpen, setIsMobileNavOpen] = useState(false);
+
+  // Workflow & Interactive Inter-View State
   const [activeMachineForUpload, setActiveMachineForUpload] = useState<string | null>(null);
   const [activeCheck, setActiveCheck] = useState<CompatibilityCheck | null>(null);
-  const [activeAnalysisId, setActiveAnalysisId] = useState<string | null>(null);
+  const [targetAnalysisId, setTargetAnalysisId] = useState<string | null>(null);
+  const [selectedExplainabilityRow, setSelectedExplainabilityRow] = useState<any | null>(null);
+
+  // Quick Ingest Target Picker Modal
+  const [showMachinePickerModal, setShowMachinePickerModal] = useState(false);
+  const [availableMachines, setAvailableMachines] = useState<Machine[]>([]);
+  const [loadingMachines, setLoadingMachines] = useState(false);
 
   useEffect(() => {
     async function checkAuth() {
@@ -36,15 +54,37 @@ export function App() {
   const handleLogout = () => {
     api.auth.logout();
     setCurrentUser(null);
-    setActiveAnalysisId(null);
+    setCurrentSection('dashboard');
     setActiveCheck(null);
     setActiveMachineForUpload(null);
+    setTargetAnalysisId(null);
+    setSelectedExplainabilityRow(null);
+  };
+
+  // Open Quick Upload
+  const handleOpenQuickUpload = async (preselectedMachineId?: string) => {
+    if (preselectedMachineId) {
+      setActiveMachineForUpload(preselectedMachineId);
+      return;
+    }
+
+    try {
+      setLoadingMachines(true);
+      setShowMachinePickerModal(true);
+      const machs = await api.machines.list();
+      setAvailableMachines(machs.filter((m) => !m.archived_at));
+    } catch (err) {
+      console.error('Failed to load machines for quick upload:', err);
+    } finally {
+      setLoadingMachines(false);
+    }
   };
 
   if (!authChecked) {
     return (
-      <div className="min-h-screen bg-slate-950 flex items-center justify-center text-slate-400 text-sm">
-        Initializing INDUSTRIA AI workspace...
+      <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center text-slate-500 text-sm font-medium">
+        <div className="w-8 h-8 border-3 border-sky-600 border-t-transparent rounded-full animate-spin mb-3"></div>
+        Initializing INDUSTRIA AI workspace & Neon DB connection...
       </div>
     );
   }
@@ -54,65 +94,160 @@ export function App() {
   }
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col font-sans">
-      {/* Top Navigation Bar */}
-      <header className="border-b border-slate-800 bg-slate-900/90 backdrop-blur sticky top-0 z-40">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="w-8 h-8 rounded-lg bg-sky-600 flex items-center justify-center shadow-lg shadow-sky-600/30">
-              <Shield className="w-5 h-5 text-white" />
+    <div className="min-h-screen bg-slate-50 text-slate-900 flex antialiased">
+      {/* Collapsible Left Sidebar */}
+      <Sidebar
+        activeSection={currentSection}
+        onSelectSection={(sec) => {
+          setCurrentSection(sec);
+          setIsMobileNavOpen(false);
+        }}
+        currentUser={currentUser}
+        onLogout={handleLogout}
+        isCollapsed={isSidebarCollapsed}
+        onToggleCollapse={() => setIsSidebarCollapsed(!isSidebarCollapsed)}
+        isMobileOpen={isMobileNavOpen}
+        onCloseMobile={() => setIsMobileNavOpen(false)}
+      />
+
+      {/* Main Content Area */}
+      <div className="flex-1 flex flex-col min-w-0 min-h-screen">
+        {/* Sticky Header with Dynamic Breadcrumbs */}
+        <Header
+          activeSection={currentSection}
+          onOpenMobile={() => setIsMobileNavOpen(true)}
+          onQuickUpload={() => handleOpenQuickUpload()}
+        />
+
+        {/* Viewport Content */}
+        <main className="flex-1 p-4 sm:p-6 lg:p-8 max-w-7xl w-full mx-auto">
+          {currentSection === 'dashboard' && (
+            <DashboardView
+              onNavigate={(sec) => setCurrentSection(sec)}
+              onOpenUpload={(mId) => handleOpenQuickUpload(mId)}
+              onOpenMachineModal={() => setCurrentSection('settings')}
+              onSelectAnalysis={(resId) => {
+                setTargetAnalysisId(resId);
+                setCurrentSection('predictions');
+              }}
+            />
+          )}
+
+          {currentSection === 'datasets' && (
+            <DatasetsView
+              onStartUpload={(mId) => handleOpenQuickUpload(mId)}
+              onSelectMachineUpload={(mId) => handleOpenQuickUpload(mId)}
+            />
+          )}
+
+          {currentSection === 'pipeline' && (
+            <PipelineView
+              onNavigateToPredictions={() => setCurrentSection('predictions')}
+            />
+          )}
+
+          {currentSection === 'predictions' && (
+            <PredictionsView
+              initialResultId={targetAnalysisId}
+              onSelectExplainabilityRow={(row) => {
+                setSelectedExplainabilityRow(row);
+                setCurrentSection('explainability');
+              }}
+              onNavigateToExplainability={() => setCurrentSection('explainability')}
+            />
+          )}
+
+          {currentSection === 'explainability' && (
+            <ExplainabilityView
+              selectedRow={selectedExplainabilityRow}
+              onClearSelectedRow={() => setSelectedExplainabilityRow(null)}
+              onNavigateToPredictions={() => setCurrentSection('predictions')}
+            />
+          )}
+
+          {currentSection === 'reports' && (
+            <ReportsView />
+          )}
+
+          {currentSection === 'settings' && (
+            <SettingsView
+              currentUser={currentUser}
+              onSelectMachineForUpload={(mId) => handleOpenQuickUpload(mId)}
+            />
+          )}
+        </main>
+
+        {/* Minimal Footer */}
+        <footer className="border-t border-slate-200/80 bg-white/60 py-3.5 px-6 text-center sm:text-left flex flex-col sm:flex-row items-center justify-between text-xs text-slate-500 font-mono">
+          <span>INDUSTRIA AI • Predictive Maintenance Platform • Authoritative PRD v1.2</span>
+          <span className="mt-1 sm:mt-0 text-[11px] text-slate-400">Neon PostgreSQL Serverless • TreeSHAP Explainer</span>
+        </footer>
+      </div>
+
+      {/* MODAL 1: Target Machine Picker for Quick Upload */}
+      {showMachinePickerModal && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+          <div className="bg-white border border-slate-200 rounded-2xl max-w-md w-full p-6 shadow-2xl space-y-4">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
+                <UploadCloud className="w-4 h-4 text-sky-600" />
+                Select Destination Machinery Asset
+              </h3>
+              <button
+                onClick={() => setShowMachinePickerModal(false)}
+                className="text-slate-400 hover:text-slate-600"
+              >
+                <X className="w-5 h-5" />
+              </button>
             </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <span className="font-bold text-base tracking-tight text-white">INDUSTRIA AI</span>
-                <span className="px-2 py-0.5 text-[10px] font-bold rounded-full bg-slate-800 text-sky-400 border border-slate-700">
-                  MS1: Core AI4I
-                </span>
+
+            <p className="text-xs text-slate-600">
+              Choose the physical machine tool that produced this sensor dataset. Active machines only (AC-MM-2).
+            </p>
+
+            {loadingMachines ? (
+              <div className="py-8 text-center text-xs text-slate-500">
+                Loading machinery catalog...
               </div>
-              <div className="text-[11px] text-slate-400 font-mono">Predictive Maintenance Modular Monolith</div>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-4 text-xs">
-            <div className="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-lg bg-slate-800/80 border border-slate-700/60">
-              <Building className="w-3.5 h-3.5 text-slate-400" />
-              <span className="font-medium text-slate-300">{currentUser.organisation.name}</span>
-            </div>
-
-            <div className="flex items-center gap-2">
-              <span className="text-slate-400">{currentUser.email}</span>
-              <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-500/10 text-amber-400 border border-amber-500/20 font-mono">
-                {currentUser.role}
-              </span>
-            </div>
-
-            <button
-              onClick={handleLogout}
-              className="p-1.5 text-slate-400 hover:text-rose-400 hover:bg-slate-800 rounded-lg transition-colors"
-              title="Sign Out"
-            >
-              <LogOut className="w-4 h-4" />
-            </button>
+            ) : availableMachines.length === 0 ? (
+              <div className="py-6 text-center space-y-3">
+                <p className="text-xs text-slate-500">No active machines found in your plant organization.</p>
+                <button
+                  onClick={() => {
+                    setShowMachinePickerModal(false);
+                    setCurrentSection('settings');
+                  }}
+                  className="bg-sky-600 text-white text-xs px-3 py-1.5 rounded-lg font-medium inline-flex items-center gap-1.5"
+                >
+                  <Plus className="w-3.5 h-3.5" /> Register a Machine First
+                </button>
+              </div>
+            ) : (
+              <div className="space-y-2 max-h-60 overflow-y-auto pr-1">
+                {availableMachines.map((m) => (
+                  <button
+                    key={m.id}
+                    onClick={() => {
+                      setShowMachinePickerModal(false);
+                      setActiveMachineForUpload(m.id);
+                    }}
+                    className="w-full text-left p-3 rounded-xl border border-slate-200 hover:border-sky-500 hover:bg-sky-50/50 transition-all flex items-center justify-between group"
+                  >
+                    <div>
+                      <div className="font-mono text-xs font-bold text-sky-700">{m.asset_tag}</div>
+                      <div className="text-xs font-semibold text-slate-900">{m.name}</div>
+                      <div className="text-[11px] text-slate-500">{m.category_code}</div>
+                    </div>
+                    <ArrowRight className="w-4 h-4 text-slate-400 group-hover:text-sky-600 group-hover:translate-x-0.5 transition-all" />
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
         </div>
-      </header>
+      )}
 
-      {/* Main Workspace Area */}
-      <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {activeAnalysisId ? (
-          <AnalysisView
-            resultId={activeAnalysisId}
-            onBack={() => setActiveAnalysisId(null)}
-          />
-        ) : (
-          <MachineRegistry
-            onSelectUpload={(mId) => setActiveMachineForUpload(mId)}
-            onViewAnalysis={(resId) => setActiveAnalysisId(resId)}
-          />
-        )}
-      </main>
-
-      {/* Modals & Wizards */}
+      {/* MODAL 2: Dataset Upload & Schema Wizard */}
       {activeMachineForUpload && (
         <DatasetUploadWizard
           machineId={activeMachineForUpload}
@@ -124,24 +259,20 @@ export function App() {
         />
       )}
 
+      {/* MODAL 3: Pre-Execution Compatibility & Gate Verification */}
       {activeCheck && (
         <CompatibilityModal
           check={activeCheck}
           onClose={() => setActiveCheck(null)}
           onAnalysisStarted={(result) => {
             setActiveCheck(null);
-            setActiveAnalysisId(result.id);
+            setTargetAnalysisId(result.id);
+            setCurrentSection('predictions');
           }}
         />
       )}
-
-      {/* Footer */}
-      <footer className="border-t border-slate-800/80 py-4 text-center text-xs text-slate-500 font-mono">
-        INDUSTRIA AI • Authoritative PRD v1.2 Implementation • Pure Software Modular Monolith
-      </footer>
     </div>
   );
 }
 
 export default App;
-

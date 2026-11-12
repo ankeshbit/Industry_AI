@@ -17,6 +17,50 @@ export interface User {
   };
 }
 
+export interface Job {
+  id: string;
+  job_type: string;
+  status: 'QUEUED' | 'RUNNING' | 'SUCCEEDED' | 'FAILED' | 'RETRY_WAIT';
+  progress_percent: number;
+  current_step: string;
+  attempt?: number;
+  error_code?: string;
+  user_message?: string;
+  created_at: string;
+  finished_at?: string;
+}
+
+export interface ModelEvaluationItem {
+  split: string;
+  metric_name: string;
+  metric_value: number;
+  ci_low?: number;
+  ci_high?: number;
+  n_samples?: number;
+}
+
+export interface ModelInfo {
+  id: string;
+  registry_name: string;
+  version: string;
+  pipeline: string;
+  configuration: string;
+  algorithm: string;
+  stage: string;
+  training_domain: string;
+  reference_evaluations: ModelEvaluationItem[];
+  customer_specific_validation: any;
+  model_card_uri?: string;
+}
+
+export interface DatasetItem {
+  id: string;
+  machine_id: string;
+  name: string;
+  dataset_type: string;
+  created_at: string;
+}
+
 export interface Machine {
   id: string;
   asset_tag: string;
@@ -221,6 +265,8 @@ export const api = {
   },
 
   datasets: {
+    listForMachine: (machineId: string) =>
+      request<DatasetItem[]>(`/machines/${machineId}/datasets`),
     createForMachine: (machineId: string, data: { name: string; dataset_type?: string }) =>
       request<{ id: string; name: string }>(`/machines/${machineId}/datasets`, { method: 'POST', body: JSON.stringify(data) }),
     upload: async (datasetId: string, file: File) => {
@@ -279,7 +325,17 @@ export const api = {
   },
 
   models: {
-    list: () => request<any[]>('/models'),
+    list: () => request<ModelInfo[]>('/models'),
+    getTemplate: async (profileId: string) => {
+      const res = await authedFetch(`${BASE_URL}/pipeline-profiles/${profileId}/template`, { method: 'GET' });
+      if (!res.ok) throw new Error('Failed to download template.');
+      return res.text();
+    },
+  },
+
+  jobs: {
+    list: () => request<Job[]>('/jobs'),
+    get: (id: string) => request<Job>(`/jobs/${id}`),
   },
 };
 

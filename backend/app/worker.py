@@ -42,7 +42,10 @@ def run_worker_loop(worker_id: str = None, poll_interval: float = 1.0, max_itera
             logger.error(f"Worker iteration error: {e}", exc_info=True)
             time.sleep(poll_interval)
         finally:
-            db.close()
+            try:
+                db.close()
+            except Exception as close_err:
+                logger.warning(f"Error closing session (connection likely recycled): {close_err}")
 
 if __name__ == "__main__":
     run_worker_loop()

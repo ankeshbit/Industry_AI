@@ -105,7 +105,7 @@ uvicorn backend.app.main:app --reload --port 8000
 
 In a separate terminal, run the asynchronous job worker:
 ```powershell
-python -m backend.app.services.worker
+python -m backend.app.worker
 ```
 
 #### 2. Frontend Development Server
