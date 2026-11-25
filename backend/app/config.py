@@ -7,6 +7,14 @@ import os
 from pathlib import Path
 
 _DEFAULT_SECRET_KEY = "industria-ai-dev-secret-key-change-in-production-1234567890"
+_INSECURE_SECRETS = {
+    _DEFAULT_SECRET_KEY,
+    "change-this-to-a-secure-random-secret-in-production",
+    "secret",
+    "password",
+    "admin",
+    "industria",
+}
 # Load .env file from project root if available
 try:
     from dotenv import load_dotenv
@@ -78,6 +86,21 @@ class Settings:
     JOB_STALE_TIMEOUT_SECONDS: int = int(os.getenv("JOB_STALE_TIMEOUT_SECONDS", "60"))
     JOB_MAX_ATTEMPTS: int = int(os.getenv("JOB_MAX_ATTEMPTS", "3"))
 
+    # CORS Origins (PRD v1.2 §11.1, SEC-05)
+    _raw_cors: str = os.getenv("CORS_ORIGINS", "")
+    if _raw_cors:
+        CORS_ORIGINS: list = [origin.strip() for origin in _raw_cors.split(",") if origin.strip()]
+    elif os.getenv("APP_ENV", "development").lower() == "production":
+        CORS_ORIGINS: list = [os.getenv("FRONTEND_URL", "http://localhost:3000").rstrip("/")]
+    else:
+        CORS_ORIGINS: list = [
+            "http://localhost:3000",
+            "http://localhost:5173",
+            "http://127.0.0.1:3000",
+            "http://127.0.0.1:5173",
+            "*"
+        ]
+
     # Storage (PRD v1.2 §12.3)
     # Keys always follow org/{organisation_id}/datasets/{id}/v{n}/{uuid}.csv
     BASE_DIR: Path = Path(__file__).resolve().parent.parent.parent
@@ -86,11 +109,67 @@ class Settings:
     MAX_CSV_ROWS: int = 500000
     MAX_CSV_COLUMNS: int = int(os.getenv("MAX_CSV_COLUMNS", "200"))
 
+    def get_redacted_database_url(self) -> str:
+        """Returns DATABASE_URL with user credentials redacted for safe logging and telemetry."""
+        url = self.DATABASE_URL
+        if "@" in url and "://" in url:
+            scheme, rest = url.split("://", 1)
+            auth, host = rest.split("@", 1)
+            if ":" in auth:
+                user, _ = auth.split(":", 1)
+                return f"{scheme}://{user}:***@{host}"
+            return f"{scheme}://***@{host}"
+        return url
+
+    def validate_configuration(self) -> None:
+        """
+        Validates required environment variables and production security thresholds.
+        Fails fast at startup if insecure settings or default credentials are used in production.
+        """
+        if self.APP_ENV == "production":
+            # 1. Enforce strong, non-default SECRET_KEY (minimum 32 characters)
+            if not self.SECRET_KEY or self.SECRET_KEY in _INSECURE_SECRETS:
+                raise RuntimeError(
+                    "CRITICAL SECURITY CONFIGURATION ERROR: SECRET_KEY must be set to a strong, "
+                    "unique secret in production. Default development keys are strictly forbidden."
+                )
+            if len(self.SECRET_KEY) < 32:
+                raise RuntimeError(
+                    f"CRITICAL SECURITY CONFIGURATION ERROR: Production SECRET_KEY length ({len(self.SECRET_KEY)}) "
+                    "is below minimum required length of 32 characters."
+                )
+
+            # 2. Database validation
+            if "sqlite" in self.DATABASE_URL.lower():
+                raise RuntimeError(
+                    "CRITICAL CONFIGURATION ERROR: SQLite database is not permitted in production. "
+                    "Configure a resilient PostgreSQL instance with SSL enabled via DATABASE_URL."
+                )
+            if "industria_dev_password" in self.DATABASE_URL:
+                raise RuntimeError(
+                    "CRITICAL SECURITY CONFIGURATION ERROR: Default development password detected in production DATABASE_URL. "
+                    "Set a secure, unique password in your production environment."
+                )
+
+            # 3. CORS validation
+            if "*" in self.CORS_ORIGINS:
+                raise RuntimeError(
+                    "CRITICAL SECURITY CONFIGURATION ERROR: Wildcard '*' CORS origin is strictly forbidden in production. "
+                    "Configure specific allowed frontend origins via CORS_ORIGINS."
+                )
+
+            # 4. Supabase validation if enabled
+            if self.is_supabase_enabled:
+                if not self.SUPABASE_JWT_SECRET and not self.SUPABASE_ANON_KEY:
+                    raise RuntimeError(
+                        "CRITICAL SECURITY CONFIGURATION ERROR: Supabase authentication enabled in production but missing "
+                        "SUPABASE_JWT_SECRET."
+                    )
+
 settings = Settings()
 
-# JWTs are signed with SECRET_KEY: running production with the publicly known default lets anyone forge tokens.
-if settings.APP_ENV == "production" and settings.SECRET_KEY == _DEFAULT_SECRET_KEY:
-    raise RuntimeError("SECRET_KEY must be set to a strong secret when APP_ENV=production.")
+# Validate configuration on import
+settings.validate_configuration()
 
 # Ensure local storage directory exists
 settings.STORAGE_DIR.mkdir(parents=True, exist_ok=True)

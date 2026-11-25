@@ -12,8 +12,9 @@ import backend.app.models  # ensure all models are imported
 # access to the values within the .ini file in use.
 config = context.config
 
-# Set sqlalchemy.url dynamically from application settings
-if settings.DATABASE_URL:
+# Set sqlalchemy.url dynamically from application settings if not an explicit valid URL
+current_url = config.get_main_option("sqlalchemy.url")
+if (not current_url or "driver://user:pass" in current_url) and settings.DATABASE_URL:
     config.set_main_option("sqlalchemy.url", settings.DATABASE_URL)
 
 # Interpret the config file for Python logging.
