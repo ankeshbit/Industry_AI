@@ -5,6 +5,7 @@ computes calibrated failure probabilities and risk classes, and stores immutable
 """
 
 import os
+import json
 from pathlib import Path
 from datetime import datetime
 from typing import Dict, Any, Optional, List
@@ -79,19 +80,38 @@ def execute_analysis(
         raise HTTPException(status_code=422, detail="Missing dataset version or column mapping.")
 
     # 1. Load dataset CSV
-    storage_abs_path = settings.STORAGE_DIR / dv.storage_key
+    storage_abs_path = (settings.STORAGE_DIR / dv.storage_key).resolve()
+    if not storage_abs_path.is_relative_to(settings.STORAGE_DIR.resolve()):
+        raise HTTPException(
+            status_code=400,
+            detail={"error": {"code": "PATH_TRAVERSAL_DETECTED", "message": "Storage path escapes base storage directory."}}
+        )
     if not storage_abs_path.exists():
-        raise HTTPException(status_code=500, detail="Underlying dataset file missing from storage.")
+        raise HTTPException(status_code=500, detail={"error": {"code": "FILE_NOT_FOUND", "message": "Underlying dataset file missing from storage."}})
 
     df_raw = pd.read_csv(storage_abs_path)
     total_rows = len(df_raw)
 
-    # 2. Extract and convert canonical features
+    # 2. Load trained model bundle via registry-driven loader
+    cfg = profile.configuration
+    loaded_bundle = resolve_and_load_model(db, profile)
+    pipeline = loaded_bundle.pipeline
+    calibrator = loaded_bundle.calibrator
+    tau = loaded_bundle.optimal_threshold
+    expected_features = loaded_bundle.feature_names
+    is_production_bundle = True
+
+    # 3. Extract and convert canonical features
     input_df = pd.DataFrame()
     for canon_name, model_col_name in CANONICAL_TO_MODEL_FEATURE.items():
         if canon_name in mapping_record.mappings:
             spec = mapping_record.mappings[canon_name]
             col_name = spec["column"]
+            if col_name not in df_raw.columns:
+                raise HTTPException(
+                    status_code=422,
+                    detail={"error": {"code": "E_MISSING_COLUMN", "message": f"Mapped column '{col_name}' missing from uploaded dataset."}}
+                )
             if canon_name == "product_type":
                 # Normalise L/M/H so e.g. "l " or "m" is not silently one-hot encoded as unknown
                 input_df[model_col_name] = df_raw[col_name].astype(str).str.strip().str.upper()
@@ -100,23 +120,50 @@ def execute_analysis(
                 canon_unit = "K" if "temperature" in canon_name else "rpm" if "speed" in canon_name else "Nm" if "torque" in canon_name else "min"
                 input_df[model_col_name] = convert_to_canonical(df_raw[col_name], unit_declared, canon_unit)
 
-    # 3. Load trained model bundle via registry-driven loader
-    cfg = profile.configuration
-    loaded_bundle = resolve_and_load_model(db, profile)
-    pipeline = loaded_bundle.pipeline
-    calibrator = loaded_bundle.calibrator
-    tau = loaded_bundle.optimal_threshold
-    model_path = loaded_bundle.artifact_path
-    is_production_bundle = True
+    # 4. Strictly enforce feature names and column ordering as expected by trained model bundle
+    missing_model_cols = set(expected_features) - set(input_df.columns)
+    if missing_model_cols:
+        raise HTTPException(
+            status_code=422,
+            detail={"error": {"code": "E_MISSING_MODEL_FEATURES", "message": f"Input data missing expected model features: {sorted(list(missing_model_cols))}"}}
+        )
+    input_df = input_df[expected_features]
 
-    # 4. Predict probabilities (using calibrated probabilities when available)
+    # 5. Validate input data: reject infinite values, NaNs, and invalid categorical variants
+    for col in [c for c in input_df.columns if c != "Type"]:
+        if np.isinf(input_df[col]).any():
+            raise HTTPException(
+                status_code=422,
+                detail={"error": {"code": "E_INFINITE_VALUES", "message": f"Input feature '{col}' contains infinite values (inf or -inf)."}}
+            )
+    if input_df.isna().any().any():
+        bad_cols = [c for c in input_df.columns if input_df[c].isna().any()]
+        raise HTTPException(
+            status_code=422,
+            detail={"error": {"code": "E_MISSING_VALUES", "message": f"Input features contain missing values in columns: {bad_cols}."}}
+        )
+    if "Type" in input_df.columns:
+        invalid_types = set(input_df["Type"].unique()) - {"L", "M", "H"}
+        if invalid_types:
+            raise HTTPException(
+                status_code=422,
+                detail={"error": {"code": "E_INVALID_CATEGORY_VALUES", "message": f"Invalid product_type categories: {sorted(list(invalid_types))}. Must be L, M, or H."}}
+            )
+
+    # 6. Predict probabilities (using calibrated probabilities when available)
     if calibrator is not None:
         probabilities = calibrator.predict_proba(input_df)[:, 1]
     else:
         probabilities = pipeline.predict_proba(input_df)[:, 1]
-        probabilities = pipeline.predict_proba(input_df)[:, 1]
 
-    # 5. Determine threshold and assign risk classes
+    if np.isnan(probabilities).any() or np.isinf(probabilities).any():
+        raise HTTPException(
+            status_code=500,
+            detail={"error": {"code": "E_INFERENCE_CALCULATION_ERROR", "message": "Inference produced invalid NaN or infinite probabilities."}}
+        )
+    probabilities = np.clip(probabilities, 0.0, 1.0)
+
+    # 7. Determine threshold and assign risk classes
     risk_classes = []
     predicted_failures = 0
     medium_threshold = 0.5 * tau if is_production_bundle else 0.20
@@ -129,7 +176,7 @@ def execute_analysis(
         else:
             risk_classes.append("LOW")
 
-    # 6. Flag OOD rows
+    # 8. Flag OOD rows
     ref_ranges = profile.document.get("reference_ranges", {})
     m = profile.document.get("applicability", {}).get("margin_fraction", 0.10)
     is_ood_array = np.zeros(total_rows, dtype=bool)
@@ -147,7 +194,7 @@ def execute_analysis(
     ood_count = int(is_ood_array.sum())
     ood_fraction = round(ood_count / total_rows, 4) if total_rows > 0 else 0.0
 
-    # 7. Summary statistics
+    # 9. Summary statistics
     summary = {
         "total_rows": total_rows,
         "predicted_failures": predicted_failures,
@@ -168,7 +215,7 @@ def execute_analysis(
         }
     }
 
-    # 8. Top rows (top 20 highest probabilities) with TreeSHAP attributions
+    # 10. Top rows (top 20 highest probabilities) with TreeSHAP attributions
     top_indices = np.argsort(probabilities)[::-1][:20]
     
     # Compute TreeSHAP attributions for top rows if tree model available
@@ -195,6 +242,9 @@ def execute_analysis(
             feature_names_out = list(preprocessor_step.get_feature_names_out())
             explanation_meta = {
                 "method": "FactorAttribution",
+                "engine": "TreeSHAP",
+                "is_shap": True,
+                "attribution_type": "LOCAL_ROW_LEVEL",
                 "base_margin_value": round(base_val, 5),
                 "additivity_verified": bool(max_delta <= 1e-5),
                 "max_reconstruction_delta": round(max_delta, 8),
@@ -204,6 +254,9 @@ def execute_analysis(
     except Exception as e:
         explanation_meta = {
             "method": "FeatureImportance",
+            "engine": "GlobalFeatureImportance",
+            "is_shap": False,
+            "attribution_type": "GLOBAL_MODEL_LEVEL",
             "error": str(e),
             "non_causality_disclaimer": "Feature attributions describe model behaviour, not physical causation."
         }
@@ -302,6 +355,35 @@ def execute_analysis(
     db.add(result)
     # autoflush is disabled; flush so result.id is populated before it is referenced below
     db.flush()
+
+    # Build and persist complete predictions dataset to storage (PRD §8.6, §12.3)
+    preds_dir = settings.STORAGE_DIR / f"org/{org_id}/analyses/{result.id}"
+    preds_dir.mkdir(parents=True, exist_ok=True)
+
+    # Save predictions.csv for streaming CSV export
+    preds_df = input_df.copy()
+    preds_df.insert(0, "row_index", range(total_rows))
+    preds_df.insert(1, "failure_probability", [round(float(p), 4) for p in probabilities])
+    preds_df.insert(2, "risk_class", risk_classes)
+    preds_df.insert(3, "ood_warning", is_ood_array)
+    preds_df.to_csv(preds_dir / "predictions.csv", index=False)
+
+    # Save predictions.json for paginated retrieval
+    all_rows_records = []
+    for idx in range(total_rows):
+        row_features = {}
+        for col in input_df.columns:
+            v = input_df[col].iloc[idx]
+            row_features[col] = None if pd.isna(v) else (float(v) if isinstance(v, (int, float, np.number)) else str(v))
+        all_rows_records.append({
+            "row_index": int(idx),
+            "failure_probability": round(float(probabilities[idx]), 4),
+            "risk_class": risk_classes[idx],
+            "ood_warning": bool(is_ood_array[idx]),
+            "features": row_features
+        })
+    with open(preds_dir / "predictions.json", "w", encoding="utf-8") as f:
+        json.dump(all_rows_records, f)
 
     # Usage event (PRD line 2601)
     db.add(UsageEvent(

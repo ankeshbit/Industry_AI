@@ -51,7 +51,21 @@ export const PredictionsView: React.FC<PredictionsViewProps> = ({
   const [currentPage, setCurrentPage] = useState(1);
   const pageSize = 25;
 
-  const handleExportCSV = () => {
+  const handleExportCSV = async () => {
+    if (!selectedAnalysisId) return;
+    try {
+      const blob = await api.analyses.exportPredictions(selectedAnalysisId, 'csv');
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `industria_predictions_${selectedAnalysisId.slice(0, 8)}.csv`;
+      a.click();
+      URL.revokeObjectURL(url);
+      return;
+    } catch (err) {
+      console.warn('Backend full export failed, falling back to loaded rows export:', err);
+    }
+
     if (filteredRows.length === 0) return;
     const headers = [
       'Row_Index',
@@ -83,7 +97,7 @@ export const PredictionsView: React.FC<PredictionsViewProps> = ({
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `industria_predictions_${selectedAnalysisId ? selectedAnalysisId.slice(0, 8) : 'export'}.csv`;
+    a.download = `industria_predictions_${selectedAnalysisId.slice(0, 8)}.csv`;
     a.click();
     URL.revokeObjectURL(url);
   };
@@ -138,10 +152,10 @@ export const PredictionsView: React.FC<PredictionsViewProps> = ({
       try {
         const [resData, rowsData] = await Promise.all([
           api.analyses.get(selectedAnalysisId),
-          api.analyses.getRows(selectedAnalysisId),
+          api.analyses.getRows(selectedAnalysisId, { page: 1, page_size: 250 }),
         ]);
         setCurrentResult(resData);
-        setRows(rowsData.top_rows || []);
+        setRows(rowsData.rows || rowsData.top_rows || []);
       } catch (err) {
         console.error('Failed to load analysis details:', err);
       } finally {

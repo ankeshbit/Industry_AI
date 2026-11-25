@@ -268,7 +268,7 @@ async function refreshAccessToken(): Promise<boolean> {
 }
 
 /** fetch() that retries once with a refreshed access token on 401 (skipped for auth endpoints). */
-async function authedFetch(url: string, init: RequestInit): Promise<Response> {
+async function authedFetch(url: string, init: RequestInit = {}): Promise<Response> {
   const build = (): RequestInit => ({
     ...init,
     headers: { ...(init.headers as Record<string, string>), ...getAuthHeader() },
@@ -513,7 +513,34 @@ export const api = {
         }),
       }),
     get: (resultId: string) => request<AnalysisResult>(`/analyses/${resultId}`),
-    getRows: (resultId: string) => request<{ analysis_id: string; total_rows: number; top_rows: any[] }>(`/analyses/${resultId}/rows`),
+    getRows: (
+      resultId: string,
+      params?: { page?: number; page_size?: number; risk_class?: string; ood_only?: boolean }
+    ) => {
+      const q = new URLSearchParams();
+      if (params?.page) q.append('page', params.page.toString());
+      if (params?.page_size) q.append('page_size', params.page_size.toString());
+      if (params?.risk_class) q.append('risk_class', params.risk_class);
+      if (params?.ood_only) q.append('ood_only', 'true');
+      const queryStr = q.toString() ? `?${q.toString()}` : '';
+      return request<{
+        analysis_id: string;
+        total_rows: number;
+        filtered_rows?: number;
+        page?: number;
+        page_size?: number;
+        total_pages?: number;
+        rows?: any[];
+        top_rows: any[];
+      }>(`/analyses/${resultId}/rows${queryStr}`);
+    },
+    exportUrl: (resultId: string, format: 'csv' | 'json' = 'csv') =>
+      `${BASE_URL}/analyses/${resultId}/export?format=${format}`,
+    exportPredictions: async (resultId: string, format: 'csv' | 'json' = 'csv') => {
+      const res = await authedFetch(`${BASE_URL}/analyses/${resultId}/export?format=${format}`);
+      if (!res.ok) throw new Error('Failed to download prediction export.');
+      return res.blob();
+    },
     getMachineAnalyses: (machineId: string) => request<AnalysisResult[]>(`/machines/${machineId}/analyses`),
   },
 

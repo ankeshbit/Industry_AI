@@ -7,6 +7,7 @@ validation reporting, and column mapping wizard.
 import os
 import io
 import re
+import csv
 import uuid
 import codecs
 import hashlib
@@ -24,6 +25,8 @@ from backend.app.models.dataset import (
 )
 from backend.app.models.compatibility import PipelineProfile
 from backend.app.models.usage import UsageEvent
+
+SAFE_ID_REGEX = re.compile(r"^[a-zA-Z0-9\-_]+$")
 
 # Canonical features and synonyms for AI4I
 SYNONYMS = {
@@ -60,16 +63,52 @@ def _normalize_header(text: str) -> str:
 
 
 FORBIDDEN_COLUMNS = {
-    "machine_failure", "machine failure", "twf", "hdf", "pwf", "osf", "rnf",
-    "udi", "product_id", "product id"
+    "machine_failure", "machine failure", "failure", "target", "label",
+    "twf", "hdf", "pwf", "osf", "rnf", "udi", "product_id", "product id"
 }
 
-def _detect_delimiter(file_bytes: bytes, filename: str) -> str:
-    """.tsv files, or files whose header line has more tabs than commas, are tab-delimited."""
+def _decode_and_detect_encoding(file_bytes: bytes) -> Tuple[str, str]:
+    """Decodes file bytes supporting UTF-8, UTF-8-BOM, UTF-16, and Latin-1."""
+    if file_bytes.startswith(codecs.BOM_UTF8):
+        try:
+            return file_bytes.decode("utf-8-sig"), "utf-8-sig"
+        except UnicodeDecodeError:
+            pass
+    if file_bytes.startswith(codecs.BOM_UTF16_LE) or file_bytes.startswith(codecs.BOM_UTF16_BE):
+        try:
+            return file_bytes.decode("utf-16"), "utf-16"
+        except UnicodeDecodeError:
+            pass
+    try:
+        return file_bytes.decode("utf-8"), "utf-8"
+    except UnicodeDecodeError:
+        pass
+    if len(file_bytes) % 2 == 0:
+        try:
+            return file_bytes.decode("utf-16"), "utf-16"
+        except UnicodeDecodeError:
+            pass
+    try:
+        return file_bytes.decode("latin-1"), "latin-1"
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
+            detail={"error": {"code": "UNSUPPORTED_FORMAT", "message": f"Unable to decode file encoding: {str(e)}"}}
+        )
+
+def _detect_delimiter(sample_text: str, filename: str) -> str:
+    """.tsv files, or files whose header line has more tabs/semicolons than commas."""
     if filename.lower().endswith(".tsv"):
         return "\t"
-    header = file_bytes[:4096].decode("utf-8-sig", errors="ignore").split("\n", 1)[0]
-    return "\t" if header.count("\t") > header.count(",") else ","
+    first_line = sample_text.split("\n", 1)[0]
+    tab_count = first_line.count("\t")
+    comma_count = first_line.count(",")
+    semi_count = first_line.count(";")
+    if tab_count > comma_count and tab_count > semi_count:
+        return "\t"
+    if semi_count > comma_count and semi_count > tab_count:
+        return ";"
+    return ","
 
 
 def create_dataset(
@@ -137,16 +176,32 @@ def upload_dataset_version_stream(
     user_id: Optional[str] = None
 ) -> Tuple[DatasetVersion, bool]:
     """
-    Ingests a CSV dataset version:
+    Ingests a CSV/TSV dataset version:
+    - Enforces path safety and identifier validation
     - Enforces 50 MB byte limit (413 PAYLOAD_TOO_LARGE)
-    - Verifies file kind (CSV) and magic bytes (415 UNSUPPORTED_FORMAT)
+    - Verifies file kind (CSV/TSV) and magic bytes (415 UNSUPPORTED_FORMAT)
+    - Rejects empty files (422 E_EMPTY)
+    - Rejects duplicate column headers (422 E_DUPLICATE_COLUMNS)
+    - Rejects wide datasets (422 E_TOO_MANY_COLUMNS)
     - Streams to storage/org/{org_id}/datasets/{id}/v{n}/{uuid}.csv
-    - Computes SHA-256
-    - Deduplicates if exact hash already exists in this dataset
-    - Ingests schema and columns
+    - Computes SHA-256 and deduplicates
+    - Ingests schema and columns with rollback on failure (no orphaned files)
     """
+    # 0. Path safety: Validate identifiers
+    if not SAFE_ID_REGEX.match(org_id) or not SAFE_ID_REGEX.match(dataset_id):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={"error": {"code": "INVALID_IDENTIFIER", "message": "Identifier contains invalid path characters."}}
+        )
+
     # 1. Size check (AC-DS-2)
     size_bytes = len(file_bytes)
+    if size_bytes == 0 or not file_bytes.strip():
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail={"error": {"code": "E_EMPTY", "message": "Uploaded file is empty."}}
+        )
+
     if size_bytes > settings.MAX_UPLOAD_SIZE_BYTES:
         raise HTTPException(
             status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
@@ -167,10 +222,18 @@ def upload_dataset_version_stream(
             detail={"error": {"code": "UNSUPPORTED_FORMAT", "message": "Invalid file content: executable or non-CSV magic bytes detected."}}
         )
 
-    # 3. SHA-256 Computation
+    # 3. Encoding detection & decoding
+    text_content, detected_encoding = _decode_and_detect_encoding(file_bytes)
+    if not text_content.strip():
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail={"error": {"code": "E_EMPTY", "message": "Uploaded file is empty or whitespace only."}}
+        )
+
+    # 4. SHA-256 Computation
     sha256_hash = hashlib.sha256(file_bytes).hexdigest()
 
-    # 4. Verify dataset exists and belongs to org
+    # 5. Verify dataset exists and belongs to org
     dataset = db.query(Dataset).filter(Dataset.id == dataset_id, Dataset.organisation_id == org_id).first()
     if not dataset:
         raise HTTPException(
@@ -178,7 +241,7 @@ def upload_dataset_version_stream(
             detail={"error": {"code": "NOT_FOUND", "message": "Dataset not found."}}
         )
 
-    # 5. Deduplication Check (PRD line 839, AC-DS-6)
+    # 6. Deduplication Check (PRD line 839, AC-DS-6)
     existing_version = db.query(DatasetVersion).filter(
         DatasetVersion.dataset_id == dataset_id,
         DatasetVersion.sha256 == sha256_hash,
@@ -187,18 +250,50 @@ def upload_dataset_version_stream(
     if existing_version:
         return existing_version, True  # already exists
 
-    # 6. Parse CSV content to verify structure
-    # utf-8-sig: tolerate an Excel UTF-8 BOM explicitly rather than relying on the parser's behaviour.
-    delimiter = _detect_delimiter(file_bytes, filename)
+    # 7. Delimiter & Header Inspection
+    delimiter = _detect_delimiter(text_content[:8192], filename)
+    header_line = text_content.strip().split("\n", 1)[0].strip()
+    if not header_line:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail={"error": {"code": "E_EMPTY", "message": "Dataset contains no header line."}}
+        )
+
+    reader = csv.reader([header_line], delimiter=delimiter)
+    raw_headers = next(reader, [])
+    raw_headers = [h.strip() for h in raw_headers]
+    if not raw_headers or all(h == "" for h in raw_headers):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail={"error": {"code": "E_EMPTY", "message": "Dataset contains empty headers."}}
+        )
+
+    if len(raw_headers) != len(set(raw_headers)):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail={"error": {"code": "E_DUPLICATE_COLUMNS", "message": "Dataset contains duplicate column headers."}}
+        )
+
+    if len(raw_headers) > settings.MAX_CSV_COLUMNS:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail={"error": {"code": "E_TOO_MANY_COLUMNS", "message": f"Dataset has {len(raw_headers)} columns, exceeding the maximum allowed {settings.MAX_CSV_COLUMNS} columns."}}
+        )
+
+    # 8. Parse CSV content
     try:
-        df = pd.read_csv(io.BytesIO(file_bytes), sep=delimiter, encoding="utf-8-sig", nrows=settings.MAX_CSV_ROWS + 1)
+        df = pd.read_csv(io.StringIO(text_content), sep=delimiter, nrows=settings.MAX_CSV_ROWS + 1)
+    except (pd.errors.ParserError, pd.errors.EmptyDataError) as e:
+        raise HTTPException(
+            status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
+            detail={"error": {"code": "E_MALFORMED_CSV", "message": f"Malformed CSV file: {str(e)}"}}
+        )
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
             detail={"error": {"code": "UNSUPPORTED_FORMAT", "message": f"Malformed CSV file: {str(e)}"}}
         )
 
-    # Do not silently truncate: later stages re-read the whole stored file
     if len(df) > settings.MAX_CSV_ROWS:
         raise HTTPException(
             status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
@@ -211,99 +306,111 @@ def upload_dataset_version_stream(
             detail={"error": {"code": "E_EMPTY", "message": "Dataset contains no rows or columns."}}
         )
 
-    # 7. Determine version number
+    # 9. Determine version number
     latest_version = db.query(DatasetVersion).filter(
         DatasetVersion.dataset_id == dataset_id
     ).order_by(DatasetVersion.version_no.desc()).first()
     version_no = (latest_version.version_no + 1) if latest_version else 1
 
-    # 8. Save file to storage
+    # 10. Path traversal validation & file storage
     file_uuid = str(uuid.uuid4())
     storage_rel_dir = f"org/{org_id}/datasets/{dataset_id}/v{version_no}"
-    storage_abs_dir = settings.STORAGE_DIR / storage_rel_dir
+    storage_abs_dir = (settings.STORAGE_DIR / storage_rel_dir).resolve()
+    if not storage_abs_dir.is_relative_to(settings.STORAGE_DIR.resolve()):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={"error": {"code": "PATH_TRAVERSAL_DETECTED", "message": "Storage path escapes base storage directory."}}
+        )
     storage_abs_dir.mkdir(parents=True, exist_ok=True)
-    storage_path = storage_abs_dir / f"{file_uuid}.csv"
+    storage_path = (storage_abs_dir / f"{file_uuid}.csv").resolve()
+    if not storage_path.is_relative_to(settings.STORAGE_DIR.resolve()):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={"error": {"code": "PATH_TRAVERSAL_DETECTED", "message": "Storage file path escapes base storage directory."}}
+        )
     storage_key = f"{storage_rel_dir}/{file_uuid}.csv"
 
-    # Every later stage re-reads the stored file with pd.read_csv() (comma, utf-8). Store a normalised copy so
-    # TSV uploads (previously parsed as ONE column downstream) work and BOMs are dropped; the SHA-256 recorded
-    # above stays that of the original upload so de-duplication is unaffected.
-    if delimiter != ",":
-        stored_bytes = df.to_csv(index=False).encode("utf-8")
-    elif file_bytes.startswith(codecs.BOM_UTF8):
-        stored_bytes = file_bytes[len(codecs.BOM_UTF8):]
-    else:
-        stored_bytes = file_bytes
+    # Always write a normalized UTF-8 comma-separated CSV so downstream pipeline stages read cleanly
+    stored_bytes = df.to_csv(index=False).encode("utf-8")
     with open(storage_path, "wb") as f:
         f.write(stored_bytes)
 
-    # 9. Create DatasetVersion
-    dv = DatasetVersion(
-        organisation_id=org_id,
-        dataset_id=dataset_id,
-        version_no=version_no,
-        file_kind="CSV",
-        original_filename=filename,
-        storage_key=storage_key,
-        size_bytes=size_bytes,
-        sha256=sha256_hash,
-        scan_status="CLEAN",
-        status="UPLOADED",
-        row_count=len(df),
-        column_count=len(df.columns),
-        uploaded_by=user_id
-    )
-    db.add(dv)
-    db.flush()
+    # 11. Transactional DB updates with file rollback on failure
+    try:
+        dv = DatasetVersion(
+            organisation_id=org_id,
+            dataset_id=dataset_id,
+            version_no=version_no,
+            file_kind="CSV",
+            original_filename=filename,
+            storage_key=storage_key,
+            size_bytes=size_bytes,
+            sha256=sha256_hash,
+            scan_status="CLEAN",
+            status="UPLOADED",
+            row_count=len(df),
+            column_count=len(df.columns),
+            uploaded_by=user_id
+        )
+        db.add(dv)
+        db.flush()
 
-    # 10. Ingest columns
-    for idx, col_name in enumerate(df.columns):
-        series = df[col_name]
-        if pd.api.types.is_numeric_dtype(series):
-            inferred_type = "numeric"
-            stats = {
-                "min": float(series.min()) if not series.empty and pd.notnull(series.min()) else None,
-                "max": float(series.max()) if not series.empty and pd.notnull(series.max()) else None,
-                "null_count": int(series.isna().sum())
-            }
-        elif pd.api.types.is_datetime64_any_dtype(series):
-            inferred_type = "datetime"
-            stats = {"null_count": int(series.isna().sum())}
-        else:
-            inferred_type = "categorical"
-            unique_vals = [str(x) for x in series.dropna().unique()[:10]]
-            stats = {"unique_count": int(series.nunique()), "sample_values": unique_vals, "null_count": int(series.isna().sum())}
+        for idx, col_name in enumerate(df.columns):
+            series = df[col_name]
+            if pd.api.types.is_numeric_dtype(series):
+                inferred_type = "numeric"
+                s_clean = series.replace([np.inf, -np.inf], np.nan).dropna()
+                stats = {
+                    "min": float(s_clean.min()) if not s_clean.empty else None,
+                    "max": float(s_clean.max()) if not s_clean.empty else None,
+                    "null_count": int(series.isna().sum()),
+                    "inf_count": int(np.isinf(series).sum()) if hasattr(series, "dtype") else 0
+                }
+            elif pd.api.types.is_datetime64_any_dtype(series):
+                inferred_type = "datetime"
+                stats = {"null_count": int(series.isna().sum())}
+            else:
+                inferred_type = "categorical"
+                unique_vals = [str(x) for x in series.dropna().unique()[:10]]
+                stats = {
+                    "unique_count": int(series.nunique()),
+                    "sample_values": unique_vals,
+                    "null_count": int(series.isna().sum())
+                }
 
-        col = DatasetColumn(
+            col = DatasetColumn(
+                organisation_id=org_id,
+                dataset_version_id=dv.id,
+                position=idx,
+                name=str(col_name),
+                inferred_type=inferred_type,
+                stats=stats
+            )
+            db.add(col)
+
+        db.add(DatasetEvent(
             organisation_id=org_id,
             dataset_version_id=dv.id,
-            position=idx,
-            name=str(col_name),
-            inferred_type=inferred_type,
-            stats=stats
-        )
-        db.add(col)
+            event_type="UPLOADED",
+            actor_id=user_id,
+            details={"filename": filename, "size_bytes": size_bytes, "rows": len(df), "columns": len(df.columns)}
+        ))
 
-    # 11. Record DatasetEvent
-    db.add(DatasetEvent(
-        organisation_id=org_id,
-        dataset_version_id=dv.id,
-        event_type="UPLOADED",
-        actor_id=user_id,
-        details={"filename": filename, "size_bytes": size_bytes, "rows": len(df), "columns": len(df.columns)}
-    ))
+        db.add(UsageEvent(
+            organisation_id=org_id,
+            event_type="DATASET_UPLOAD",
+            quantity=1,
+            details={"dataset_version_id": dv.id, "size_bytes": size_bytes}
+        ))
 
-    # 12. Record UsageEvent (PRD line 2601)
-    db.add(UsageEvent(
-        organisation_id=org_id,
-        event_type="DATASET_UPLOAD",
-        quantity=1,
-        details={"dataset_version_id": dv.id, "size_bytes": size_bytes}
-    ))
-
-    db.commit()
-    db.refresh(dv)
-    return dv, False
+        db.commit()
+        db.refresh(dv)
+        return dv, False
+    except Exception as e:
+        db.rollback()
+        if storage_path.exists():
+            storage_path.unlink(missing_ok=True)
+        raise e
 
 def compute_quality_score_and_report(
     db: Session,
@@ -389,11 +496,15 @@ def compute_quality_score_and_report(
         invalid_count = 0
         for col in numeric_cols:
             s = df[col].dropna()
+            # Infinite values are invalid numbers
+            inf_mask = np.isinf(s)
+            invalid_count += int(inf_mask.sum())
+            s_finite = s[~inf_mask]
             if col in physical_bounds:
                 bound, strict = physical_bounds[col]
-                invalids = (s <= bound).sum() if strict else (s < bound).sum()
+                invalids = (s_finite <= bound).sum() if strict else (s_finite < bound).sum()
             else:
-                invalids = (s < -100).sum()
+                invalids = (s_finite < -100).sum()
             invalid_count += int(invalids)
         total_num_cells = total_rows * len(numeric_cols)
         s_valid = max(0.0, 1.0 - (invalid_count / total_num_cells)) if total_num_cells > 0 else 1.0
@@ -402,7 +513,7 @@ def compute_quality_score_and_report(
                 "code": "W_INVALID_VALUES",
                 "severity": "WARNING",
                 "count": invalid_count,
-                "message": f"Found {invalid_count} values outside physically plausible ranges (e.g. negative speed, torque or tool wear, or temperatures below absolute zero)."
+                "message": f"Found {invalid_count} values outside physically plausible ranges (e.g. infinite values, negative speed, torque or tool wear, or temperatures below absolute zero)."
             })
     else:
         s_valid = 1.0
@@ -475,7 +586,16 @@ def compute_quality_score_and_report(
     }
 
     # Generate preview (first 10 rows as dict)
-    preview_data = df.head(10).replace({np.nan: None}).to_dict(orient="records")
+    preview_df = df.head(10).replace([np.nan, np.inf, -np.inf], None)
+    preview_data = []
+    for row in preview_df.to_dict(orient="records"):
+        sanitized_row = {}
+        for k, v in row.items():
+            if isinstance(v, float) and (np.isnan(v) or np.isinf(v)):
+                sanitized_row[k] = None
+            else:
+                sanitized_row[k] = v
+        preview_data.append(sanitized_row)
 
     report = ValidationReport(
         organisation_id=dv.organisation_id,
@@ -588,6 +708,24 @@ def save_column_mapping(
     forbidden_features = [f.lower().replace(" ", "_") for f in doc.get("forbidden_features", [])]
     all_forbidden = set(forbidden_features) | {f.lower().replace(" ", "_") for f in FORBIDDEN_COLUMNS}
 
+    # Verify all required features from profile are present in mapping
+    missing_required = set(required_features.keys()) - set(mappings.keys())
+    if missing_required:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail={"error": {"code": "E_MISSING_FEATURE", "message": f"Missing required feature mapping: {sorted(list(missing_required))}"}}
+        )
+
+    # Verify that mapped columns exist in dataset version
+    dv_col_names = {c.name for c in dv.columns}
+    for canonical_name, spec in mappings.items():
+        col_mapped = spec.get("column", "")
+        if col_mapped not in dv_col_names:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail={"error": {"code": "E_UNKNOWN_COLUMN", "message": f"Column '{col_mapped}' not found in dataset version."}}
+            )
+
     if "product_type" in mappings and profile.configuration != "WITH_TYPE":
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
@@ -618,6 +756,17 @@ def save_column_mapping(
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
                 detail={"error": {"code": "W_TYPE_SEMANTICS_ASSERTED", "message": "Mapping product_type requires asserted_equivalence=true confirming AI4I-style quality variant semantics."}}
             )
+        pt_col = pt_spec.get("column")
+        storage_path = settings.STORAGE_DIR / dv.storage_key
+        if storage_path.exists() and pt_col:
+            df_sample = pd.read_csv(storage_path, usecols=[pt_col])
+            unique_vals = set(df_sample[pt_col].dropna().astype(str).str.strip().str.upper().unique())
+            if not unique_vals.issubset({"L", "M", "H"}):
+                invalid_vals = sorted(list(unique_vals - {"L", "M", "H"}))
+                raise HTTPException(
+                    status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                    detail={"error": {"code": "E_INVALID_CATEGORY_VALUES", "message": f"Column '{pt_col}' mapped to product_type contains invalid values: {invalid_vals}. Allowed values are 'L', 'M', 'H'."}}
+                )
 
     # Validate units
     for canonical_name, spec in mappings.items():

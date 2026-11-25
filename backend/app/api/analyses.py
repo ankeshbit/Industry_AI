@@ -4,9 +4,13 @@ Enforces the job-creation gate, dispatches analysis execution, and returns
 results with complete provenance, trust metadata, and OOD flags.
 """
 
+import io
+import csv
+import json
 from typing import Optional, List, Dict, Any
 from pydantic import BaseModel, Field
-from fastapi import APIRouter, Depends, status, HTTPException, Header
+from fastapi import APIRouter, Depends, status, HTTPException, Header, Query
+from fastapi.responses import FileResponse, Response
 from sqlalchemy.orm import Session
 
 from backend.app.config import settings
@@ -237,21 +241,127 @@ def get_analysis_result(
 @router.get("/analyses/{result_id}/rows", status_code=status.HTTP_200_OK)
 def get_analysis_rows(
     result_id: str,
+    page: int = Query(1, ge=1, description="Page number starting at 1"),
+    page_size: int = Query(50, ge=1, le=500, description="Number of rows per page"),
+    risk_class: Optional[str] = Query(None, description="Filter by risk class: HIGH, MEDIUM, LOW"),
+    ood_only: bool = Query(False, description="Filter to out-of-distribution rows only"),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    """Returns top rows with failure probabilities, risk classes, and OOD flags (AC-FP-8)."""
+    """
+    Returns complete row-level failure predictions with pagination and filtering,
+    as well as top high-risk rows with SHAP attributions (AC-FP-8).
+    """
     res = db.query(AnalysisResult).filter(
         AnalysisResult.id == result_id,
         AnalysisResult.organisation_id == current_user.organisation_id
     ).first()
     if not res:
         raise HTTPException(status_code=404, detail="Analysis result not found.")
+
+    # Check for stored complete predictions file
+    preds_path = (settings.STORAGE_DIR / f"org/{current_user.organisation_id}/analyses/{result_id}/predictions.json").resolve()
+    if preds_path.exists() and preds_path.is_relative_to(settings.STORAGE_DIR.resolve()):
+        with open(preds_path, "r", encoding="utf-8") as f:
+            all_rows = json.load(f)
+
+        filtered = all_rows
+        if risk_class:
+            filtered = [r for r in filtered if r.get("risk_class") == risk_class.upper()]
+        if ood_only:
+            filtered = [r for r in filtered if r.get("ood_warning") is True]
+
+        total_filtered = len(filtered)
+        start = (page - 1) * page_size
+        end = start + page_size
+        paginated_rows = filtered[start:end]
+
+        return {
+            "analysis_id": res.id,
+            "total_rows": res.summary.get("total_rows", len(all_rows)),
+            "filtered_rows": total_filtered,
+            "page": page,
+            "page_size": page_size,
+            "total_pages": (total_filtered + page_size - 1) // page_size if total_filtered > 0 else 0,
+            "rows": paginated_rows,
+            "top_rows": res.top_rows
+        }
+
+    # Fallback to top_rows when complete predictions file is not on disk (e.g. legacy results)
+    fallback_rows = res.top_rows or []
+    filtered = fallback_rows
+    if risk_class:
+        filtered = [r for r in filtered if r.get("risk_class") == risk_class.upper()]
+    if ood_only:
+        filtered = [r for r in filtered if r.get("ood_warning") is True]
+
     return {
         "analysis_id": res.id,
-        "total_rows": res.summary.get("total_rows", 0),
+        "total_rows": res.summary.get("total_rows", len(fallback_rows)),
+        "filtered_rows": len(filtered),
+        "page": page,
+        "page_size": page_size,
+        "total_pages": 1 if len(filtered) > 0 else 0,
+        "rows": filtered,
         "top_rows": res.top_rows
     }
+
+@router.get("/analyses/{result_id}/export")
+def export_analysis_predictions(
+    result_id: str,
+    format: str = Query("csv", pattern="^(csv|json)$"),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Streams complete row-level failure predictions file (CSV or JSON) with tenant isolation.
+    """
+    res = db.query(AnalysisResult).filter(
+        AnalysisResult.id == result_id,
+        AnalysisResult.organisation_id == current_user.organisation_id
+    ).first()
+    if not res:
+        raise HTTPException(status_code=404, detail="Analysis result not found.")
+
+    base_dir = (settings.STORAGE_DIR / f"org/{current_user.organisation_id}/analyses/{result_id}").resolve()
+    if not base_dir.is_relative_to(settings.STORAGE_DIR.resolve()):
+        raise HTTPException(status_code=400, detail="Invalid path traversal.")
+
+    filename_base = f"industria_predictions_{res.id[:8]}"
+
+    if format == "csv":
+        csv_file = base_dir / "predictions.csv"
+        if csv_file.exists():
+            return FileResponse(
+                path=str(csv_file),
+                media_type="text/csv",
+                filename=f"{filename_base}.csv"
+            )
+        # Dynamic fallback from top_rows
+        output = io.StringIO()
+        writer = csv.writer(output)
+        writer.writerow(["row_index", "failure_probability", "risk_class", "ood_warning"])
+        for r in (res.top_rows or []):
+            writer.writerow([r.get("row_index"), r.get("failure_probability"), r.get("risk_class"), r.get("ood_warning")])
+        return Response(
+            content=output.getvalue(),
+            media_type="text/csv",
+            headers={"Content-Disposition": f"attachment; filename={filename_base}.csv"}
+        )
+
+    # JSON export
+    json_file = base_dir / "predictions.json"
+    if json_file.exists():
+        return FileResponse(
+            path=str(json_file),
+            media_type="application/json",
+            filename=f"{filename_base}.json"
+        )
+    return Response(
+        content=json.dumps(res.top_rows or [], indent=2),
+        media_type="application/json",
+        headers={"Content-Disposition": f"attachment; filename={filename_base}.json"}
+    )
 
 @router.get("/machines/{id}/analyses", status_code=status.HTTP_200_OK)
 def get_machine_analyses(

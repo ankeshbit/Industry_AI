@@ -84,6 +84,7 @@ class Settings:
     STORAGE_DIR: Path = BASE_DIR / "storage"
     MAX_UPLOAD_SIZE_BYTES: int = 50 * 1024 * 1024  # 50 MB
     MAX_CSV_ROWS: int = 500000
+    MAX_CSV_COLUMNS: int = int(os.getenv("MAX_CSV_COLUMNS", "200"))
 
 settings = Settings()
 
