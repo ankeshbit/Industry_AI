@@ -2,7 +2,7 @@
 Database Models Package for INDUSTRIA AI (PRD v1.2 §12)
 """
 
-from backend.app.models.auth import Organisation, User, RefreshToken, Plant
+from backend.app.models.auth import Organisation, User, RefreshToken, Plant, PasswordResetToken
 from backend.app.models.machine import MachineCategory, Machine
 from backend.app.models.dataset import (
     Dataset, DatasetVersion, DatasetColumn, ColumnMapping, ValidationReport, DatasetEvent
@@ -19,6 +19,7 @@ __all__ = [
     "Organisation",
     "User",
     "RefreshToken",
+    "PasswordResetToken",
     "Plant",
     "MachineCategory",
     "Machine",

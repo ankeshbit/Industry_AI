@@ -46,6 +46,7 @@ class User(Base):
 
     organisation = relationship("Organisation", back_populates="users")
     refresh_tokens = relationship("RefreshToken", back_populates="user", cascade="all, delete-orphan")
+    password_reset_tokens = relationship("PasswordResetToken", back_populates="user", cascade="all, delete-orphan")
 
 class RefreshToken(Base):
     __tablename__ = "refresh_tokens"
@@ -79,4 +80,20 @@ class Plant(Base):
     __table_args__ = (
         UniqueConstraint("organisation_id", "code", name="uq_plant_org_code"),
     )
+
+class PasswordResetToken(Base):
+    __tablename__ = "password_reset_tokens"
+
+    id = Column(String(36), primary_key=True, default=generate_uuid)
+    organisation_id = Column(String(36), ForeignKey("organisations.id", ondelete="CASCADE"), nullable=False, index=True)
+    user_id = Column(String(36), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    token_hash = Column(String(64), nullable=False, unique=True, index=True)
+    expires_at = Column(DateTime, nullable=False, index=True)
+    is_consumed = Column(Boolean, default=False, nullable=False)
+    consumed_at = Column(DateTime, nullable=True)
+    ip_address = Column(String(45), nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+    user = relationship("User", back_populates="password_reset_tokens")
+
 

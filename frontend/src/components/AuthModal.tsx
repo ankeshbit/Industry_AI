@@ -2,12 +2,15 @@ import React, { useState, useEffect } from 'react';
 import { api, User } from '../api';
 import { isSupabaseConfigured } from '../lib/supabase';
 import { Lock, Building2, User as UserIcon, Mail, AlertCircle, Shield, CheckCircle2, Zap } from 'lucide-react';
+import { ForgotPasswordModal } from './ForgotPasswordModal';
 
 interface AuthModalProps {
   onSuccess: (user: User) => void;
+  initialView?: 'auth' | 'forgot_password';
 }
 
-export const AuthModal: React.FC<AuthModalProps> = ({ onSuccess }) => {
+export const AuthModal: React.FC<AuthModalProps> = ({ onSuccess, initialView = 'auth' }) => {
+  const [view, setView] = useState<'auth' | 'forgot_password'>(initialView);
   const [tab, setTab] = useState<'login' | 'register'>('login');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -73,6 +76,10 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onSuccess }) => {
     }
   };
 
+  if (view === 'forgot_password') {
+    return <ForgotPasswordModal onBackToSignIn={() => setView('auth')} />;
+  }
+
   return (
     <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-4 z-50">
       <div className="bg-white border border-slate-200 rounded-2xl max-w-md w-full p-8 shadow-2xl space-y-6">
@@ -82,20 +89,13 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onSuccess }) => {
           </div>
           <h2 className="text-2xl font-bold tracking-tight text-slate-900">INDUSTRIA AI</h2>
           <p className="text-xs text-slate-500 mt-1 uppercase tracking-wider font-medium">
-            Industrial Predictive Maintenance • PRD v1.2
+            Industrial Predictive Maintenance Platform
           </p>
           <div className="mt-2.5 flex items-center justify-center gap-1.5">
-            {supabaseActive ? (
-              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
-                <Zap className="w-3 h-3 text-emerald-600" />
-                Supabase Auth Active
-              </span>
-            ) : (
-              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-slate-100 text-slate-600 border border-slate-200">
-                <Shield className="w-3 h-3 text-slate-500" />
-                Local Dev Auth Mode
-              </span>
-            )}
+            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
+              <Shield className="w-3 h-3 text-emerald-600" />
+              Secure Engineer Workspace
+            </span>
           </div>
         </div>
 
@@ -204,6 +204,21 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onSuccess }) => {
                 className="w-full bg-slate-50 border border-slate-300 rounded-lg pl-9 pr-3 py-2 text-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:border-sky-500 focus:bg-white"
               />
             </div>
+            {tab === 'login' && (
+              <div className="flex justify-end pt-1.5">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setError(null);
+                    setSuccessInfo(null);
+                    setView('forgot_password');
+                  }}
+                  className="text-xs font-medium text-sky-600 hover:text-sky-700 hover:underline transition-colors"
+                >
+                  Forgot password?
+                </button>
+              </div>
+            )}
           </div>
 
           <button
@@ -216,7 +231,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onSuccess }) => {
         </form>
 
         <p className="text-[11px] text-slate-500 text-center">
-          Single-tenant production monolith with Neon PostgreSQL serverless database.
+          Enterprise-grade security and role-based access control.
         </p>
       </div>
     </div>

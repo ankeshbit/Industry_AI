@@ -57,8 +57,8 @@ export const CompatibilityModal: React.FC<CompatibilityModalProps> = ({ check, o
               <img src="/logo.png" alt="Industry AI" className="w-6 h-6 object-contain shrink-0" />
               Pre-Execution Compatibility & Gate Verification
             </h3>
-            <p className="text-xs text-slate-500 font-mono mt-0.5">
-              Profile: {check.profile.profile_id} ({check.profile.configuration})
+            <p className="text-xs text-slate-500 font-medium mt-0.5">
+              Standard Predictive Maintenance Profile
             </p>
           </div>
           <button onClick={onClose} className="text-slate-400 hover:text-slate-600 p-1 rounded-lg">
@@ -75,7 +75,7 @@ export const CompatibilityModal: React.FC<CompatibilityModalProps> = ({ check, o
         {/* Status Highlights */}
         <div className="grid grid-cols-2 gap-3 text-xs">
           <div className="bg-slate-50 p-3.5 rounded-xl border border-slate-200">
-            <span className="text-slate-500 uppercase font-semibold text-[10px] tracking-wider">Stage 1: Schema Status</span>
+            <span className="text-slate-500 uppercase font-semibold text-[10px] tracking-wider">Format & Column Compatibility</span>
             <div className="text-sm font-bold text-slate-900 mt-1 flex items-center gap-1.5">
               {(check.compatibility.status === 'COMPATIBLE' || check.compatibility.status === 'COMPATIBLE_WITH_WARNINGS') ? (
                 <CheckCircle2 className="w-4 h-4 text-emerald-600" />
@@ -87,7 +87,7 @@ export const CompatibilityModal: React.FC<CompatibilityModalProps> = ({ check, o
           </div>
 
           <div className="bg-slate-50 p-3.5 rounded-xl border border-slate-200">
-            <span className="text-slate-500 uppercase font-semibold text-[10px] tracking-wider">Stage 2: Domain Applicability</span>
+            <span className="text-slate-500 uppercase font-semibold text-[10px] tracking-wider">Operational Range Applicability</span>
             <div className="text-sm font-bold text-slate-900 mt-1">
               {check.applicability.level}
             </div>

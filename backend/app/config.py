@@ -32,6 +32,18 @@ class Settings:
     REFRESH_TOKEN_EXPIRE_DAYS: int = 7
     MAX_FAILED_LOGIN_ATTEMPTS: int = 5
     LOCKOUT_DURATION_MINUTES: int = 15
+
+    # Password Reset & Email Settings
+    PASSWORD_RESET_TOKEN_EXPIRE_MINUTES: int = 20
+    FRONTEND_URL: str = os.getenv("FRONTEND_URL", "http://localhost:3000").rstrip("/")
+    SMTP_HOST: str = os.getenv("SMTP_HOST", "")
+    SMTP_PORT: int = int(os.getenv("SMTP_PORT", "587"))
+    SMTP_USER: str = os.getenv("SMTP_USER", "")
+    SMTP_PASSWORD: str = os.getenv("SMTP_PASSWORD", "")
+    SMTP_FROM_EMAIL: str = os.getenv("SMTP_FROM_EMAIL", "noreply@industria-ai.com")
+    SMTP_FROM_NAME: str = os.getenv("SMTP_FROM_NAME", "INDUSTRIA AI")
+    SMTP_TLS: bool = os.getenv("SMTP_TLS", "true").lower() in ("true", "1")
+    SMTP_SSL: bool = os.getenv("SMTP_SSL", "false").lower() in ("true", "1")
     
     # Supabase Authentication Settings (Hybrid Auth)
     SUPABASE_URL: str = os.getenv("SUPABASE_URL", "").rstrip("/")

@@ -87,14 +87,14 @@ export const PipelineView: React.FC<PipelineViewProps> = ({ onNavigateToPredicti
     },
     {
       step: 4,
-      title: 'Calibrated Inference (M2 v3.0)',
-      desc: 'XGBoost tree margin sums passed through Platt Sigmoid Calibrator at tau* = 0.0100',
+      title: 'Calibrated Risk Calculation',
+      desc: 'Calculates calibrated failure probabilities evaluated against the 1.0% operational decision threshold',
       icon: Cpu,
     },
     {
       step: 5,
-      title: 'TreeSHAP Feature Attribution',
-      desc: 'Margin attribution computation enforcing exact additivity (max delta <= 1e-5)',
+      title: 'Primary Contributing Factors',
+      desc: 'Computes contributing factor attributions and verifies mathematical consistency',
       icon: Activity,
     },
     {
@@ -114,7 +114,7 @@ export const PipelineView: React.FC<PipelineViewProps> = ({ onNavigateToPredicti
           <div>
             <h1 className="text-xl font-bold text-slate-900 tracking-tight">Machine Learning Pipeline</h1>
             <p className="text-xs text-slate-500 mt-0.5">
-              Stage 3 production models, execution lifecycle stages, and asynchronous background worker ledger
+              Production models, execution lifecycle stages, and asynchronous background worker ledger
             </p>
           </div>
         </div>
@@ -136,11 +136,11 @@ export const PipelineView: React.FC<PipelineViewProps> = ({ onNavigateToPredicti
           <div className="flex items-center gap-2">
             <GitBranch className="w-5 h-5 text-sky-600" />
             <h2 className="text-sm font-bold text-slate-900">
-              End-to-End Inference Lifecycle Architecture (PRD §8.5 & Architecture §12)
+              End-to-End Predictive Analysis Workflow
             </h2>
           </div>
           <span className="px-2.5 py-1 rounded bg-slate-100 text-slate-700 font-mono text-[11px] font-semibold">
-            PostgreSQL SKIP LOCKED Queue
+            Automated Worker Queue
           </span>
         </div>
         <p className="text-xs text-slate-500 mb-6">
@@ -254,7 +254,7 @@ export const PipelineView: React.FC<PipelineViewProps> = ({ onNavigateToPredicti
           <div className="flex items-center gap-2">
             <Clock className="w-4 h-4 text-slate-600" />
             <h2 className="text-sm font-bold text-slate-900">
-              Background Job Execution Queue (PRD §8.5, §13.5)
+              Background Job Processing Queue
             </h2>
           </div>
           <span className="text-xs text-slate-500 font-mono">

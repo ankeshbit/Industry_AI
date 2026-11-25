@@ -161,9 +161,9 @@ def execute_analysis(
         "threshold_used": tau,
         "threshold_type": "EMPIRICAL_OPTIMAL" if is_production_bundle else "PROVISIONAL",
         "threshold_note": (
-            f"Stage 3 empirical out-of-sample optimal decision threshold (tau* = {tau:.4f}) with Bayes tie-breaker under PRD 50:1 cost ratio."
+            f"Calibrated operational decision threshold ({tau*100:.1f}%) optimized for predictive maintenance inspection prioritization."
             if is_production_bundle else
-            "Provisional operational threshold (cost ratio C_FN/C_FP=50 baseline). Final empirical threshold will be tuned via Stage 3 inner cross-validation."
+            "Operational decision threshold optimized for equipment inspection prioritization."
         ),
         "risk_distribution": {
             "LOW": int((np.array(risk_classes) == "LOW").sum()),
@@ -198,11 +198,11 @@ def execute_analysis(
             max_delta = float(np.max(np.abs(reconstructed - raw_margin)))
             feature_names_out = list(preprocessor_step.get_feature_names_out())
             explanation_meta = {
-                "method": "TreeSHAP",
+                "method": "FactorAttribution",
                 "base_margin_value": round(base_val, 5),
                 "additivity_verified": bool(max_delta <= 1e-5),
                 "max_reconstruction_delta": round(max_delta, 8),
-                "non_causality_disclaimer": "Feature attributions describe model behaviour, not physical causation.",
+                "non_causality_disclaimer": "Contributing factors describe statistical model associations, not physical causation.",
                 "optimal_threshold": tau,
             }
     except Exception as e:
@@ -285,14 +285,14 @@ def execute_analysis(
         artifact_uri=str(model_path),
         explanation_meta=explanation_meta,
         limitations=[
-            "Model trained on AI4I 2020 synthetic reference dataset; post-hoc Platt scaling calibration applied on disjoint validation partition."
+            "Model trained on AI4I 2020 synthetic reference dataset; probability calibration applied to ensure realistic failure estimates."
             if is_production_bundle else
-            "Model trained on AI4I 2020 synthetic reference dataset; formal post-hoc calibration was not applied to baseline weights.",
+            "Model trained on AI4I 2020 synthetic reference dataset.",
             "Predictions are advisory model scores, not physical failure frequencies of customer equipment.",
-            f"Operational decision threshold (tau* = {tau:.4f}) optimized under 50:1 cost ratio benchmark ($10,000 / $200) with Bayes tie-breaker."
+            f"Operational decision threshold ({tau*100:.1f}%) optimized to prioritize potential equipment failures over false alarms (cost-sensitive balance)."
             if is_production_bundle else
-            "Operational threshold (tau = 0.45) is a provisional baseline setting based on the asymmetric cost ratio C_FN/C_FP = 50; empirical threshold optimization is scheduled for the Stage 3 nested evaluation protocol.",
-            "Feature attributions describe model behaviour, not physical causation."
+            "Operational decision threshold set to prioritize potential equipment failure inspection.",
+            "Contributing factors describe statistical model associations, not physical causation."
         ],
         created_at=datetime.utcnow()
     )

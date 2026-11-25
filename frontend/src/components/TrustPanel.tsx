@@ -40,12 +40,11 @@ export const TrustPanel: React.FC<TrustPanelProps> = ({ result }) => {
         </div>
       </div>
 
-      {/* Core 3-Stage Chips */}
+      {/* Core Validation Chips */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-        {/* Stage 1: Compatibility */}
+        {/* Format & Schema Status */}
         <div className="bg-slate-900/60 p-3.5 rounded-lg border border-slate-700/40">
-          <div className="text-xs text-slate-400 uppercase tracking-wider font-semibold mb-1">Stage 1: Compatibility</div>
-          {/* Previously hard-coded to "COMPATIBLE" even for COMPATIBLE_WITH_WARNINGS results */}
+          <div className="text-xs text-slate-400 uppercase tracking-wider font-semibold mb-1">Format & Schema Status</div>
           <div className="flex items-center gap-2 mt-1">
             {result.trust.compatibility === 'COMPATIBLE' ? (
               <CheckCircle className="w-4 h-4 text-emerald-400" />
@@ -57,9 +56,9 @@ export const TrustPanel: React.FC<TrustPanelProps> = ({ result }) => {
           <p className="text-xs text-slate-400 mt-1">Dataset format, schema, and units matched to profile.</p>
         </div>
 
-        {/* Stage 2: Applicability */}
+        {/* Operational Range Applicability */}
         <div className="bg-slate-900/60 p-3.5 rounded-lg border border-slate-700/40">
-          <div className="text-xs text-slate-400 uppercase tracking-wider font-semibold mb-1">Stage 2: Applicability</div>
+          <div className="text-xs text-slate-400 uppercase tracking-wider font-semibold mb-1">Operational Range Applicability</div>
           <div className="mt-1">{getApplicabilityBadge(result.trust.applicability)}</div>
           <p className="text-xs text-slate-400 mt-1">
             {result.ood_summary.flagged_rows} of {result.ood_summary.total_rows} rows outside range ({Math.round(result.ood_summary.flagged_fraction * 100)}%).
@@ -67,9 +66,9 @@ export const TrustPanel: React.FC<TrustPanelProps> = ({ result }) => {
           </p>
         </div>
 
-        {/* Stage 3: Reliability Tier */}
+        {/* Reliability & Validation Tier */}
         <div className="bg-slate-900/60 p-3.5 rounded-lg border border-slate-700/40">
-          <div className="text-xs text-slate-400 uppercase tracking-wider font-semibold mb-1">Stage 3: Reliability Tier</div>
+          <div className="text-xs text-slate-400 uppercase tracking-wider font-semibold mb-1">Reliability & Validation Tier</div>
           <div className="text-amber-400 font-medium mt-1">{result.trust.label}</div>
           <p className="text-xs text-slate-400 mt-1">Customer-specific validation: <span className="text-slate-300 font-semibold">None performed</span>.</p>
         </div>

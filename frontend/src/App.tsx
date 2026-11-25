@@ -5,22 +5,30 @@ import { Sidebar, NavSection } from './components/Sidebar';
 import { Header } from './components/Header';
 import { DashboardView } from './components/DashboardView';
 import { DatasetsView } from './components/DatasetsView';
-import { PipelineView } from './components/PipelineView';
-import { PredictionsView } from './components/PredictionsView';
-import { ExplainabilityView } from './components/ExplainabilityView';
+import { AnalysisView } from './components/AnalysisView';
 import { ReportsView } from './components/ReportsView';
 import { SettingsView } from './components/SettingsView';
 import { DatasetUploadWizard } from './components/DatasetUploadWizard';
 import { CompatibilityModal } from './components/CompatibilityModal';
 import { HowItWorksModal } from './components/HowItWorksModal';
+import { ResetPasswordModal } from './components/ResetPasswordModal';
 import { Cpu, UploadCloud, Plus, X, ArrowRight } from 'lucide-react';
 
 export function App() {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [authChecked, setAuthChecked] = useState(false);
 
+  // Password Reset URL Token state
+  const [resetToken, setResetToken] = useState<string | null>(() => {
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      return params.get('reset_token') || params.get('token');
+    }
+    return null;
+  });
+
   // Navigation & Shell State
-  const [currentSection, setCurrentSection] = useState<NavSection>('dashboard');
+  const [currentSection, setCurrentSection] = useState<NavSection>('overview');
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [isMobileNavOpen, setIsMobileNavOpen] = useState(false);
   const [showHowItWorksModal, setShowHowItWorksModal] = useState(false);
@@ -91,6 +99,36 @@ export function App() {
     );
   }
 
+  const handleClearResetToken = () => {
+    if (typeof window !== 'undefined') {
+      const url = new URL(window.location.href);
+      url.searchParams.delete('reset_token');
+      url.searchParams.delete('token');
+      window.history.replaceState({}, document.title, url.pathname + (url.search ? url.search : ''));
+    }
+    setResetToken(null);
+  };
+
+  if (resetToken) {
+    return (
+      <ResetPasswordModal
+        token={resetToken}
+        onSuccess={() => {
+          handleClearResetToken();
+          if (currentUser) {
+            handleLogout();
+          }
+        }}
+        onRequestNewLink={() => {
+          handleClearResetToken();
+        }}
+        onCancel={() => {
+          handleClearResetToken();
+        }}
+      />
+    );
+  }
+
   if (!currentUser) {
     return <AuthModal onSuccess={(user) => setCurrentUser(user)} />;
   }
@@ -124,14 +162,14 @@ export function App() {
 
         {/* Viewport Content */}
         <main className="flex-1 p-4 sm:p-6 lg:p-8 max-w-7xl w-full mx-auto">
-          {currentSection === 'dashboard' && (
+          {(currentSection === 'overview' || currentSection === 'dashboard') && (
             <DashboardView
               onNavigate={(sec) => setCurrentSection(sec)}
               onOpenUpload={(mId) => handleOpenQuickUpload(mId)}
               onOpenMachineModal={() => setCurrentSection('settings')}
               onSelectAnalysis={(resId) => {
                 setTargetAnalysisId(resId);
-                setCurrentSection('predictions');
+                setCurrentSection('analysis');
               }}
               onOpenHowItWorks={() => setShowHowItWorksModal(true)}
             />
@@ -140,32 +178,20 @@ export function App() {
           {currentSection === 'datasets' && (
             <DatasetsView
               onStartUpload={(mId) => handleOpenQuickUpload(mId)}
-              onSelectMachineUpload={(mId) => handleOpenQuickUpload(mId)}
-            />
-          )}
-
-          {currentSection === 'pipeline' && (
-            <PipelineView
-              onNavigateToPredictions={() => setCurrentSection('predictions')}
-            />
-          )}
-
-          {currentSection === 'predictions' && (
-            <PredictionsView
-              initialResultId={targetAnalysisId}
-              onSelectExplainabilityRow={(row) => {
-                setSelectedExplainabilityRow(row);
-                setCurrentSection('explainability');
+              onNavigateToAnalysis={(datasetId) => {
+                setCurrentSection('analysis');
               }}
-              onNavigateToExplainability={() => setCurrentSection('explainability')}
             />
           )}
 
-          {currentSection === 'explainability' && (
-            <ExplainabilityView
-              selectedRow={selectedExplainabilityRow}
-              onClearSelectedRow={() => setSelectedExplainabilityRow(null)}
-              onNavigateToPredictions={() => setCurrentSection('predictions')}
+          {(currentSection === 'analysis' ||
+            currentSection === 'pipeline' ||
+            currentSection === 'predictions' ||
+            currentSection === 'explainability') && (
+            <AnalysisView
+              initialResultId={targetAnalysisId}
+              onOpenUpload={(mId) => handleOpenQuickUpload(mId)}
+              onNavigateToReports={() => setCurrentSection('reports')}
             />
           )}
 
@@ -274,7 +300,7 @@ export function App() {
           onAnalysisStarted={(result) => {
             setActiveCheck(null);
             setTargetAnalysisId(result.id);
-            setCurrentSection('predictions');
+            setCurrentSection('analysis');
           }}
         />
       )}

@@ -68,40 +68,40 @@ export const HowItWorksModal: React.FC<HowItWorksModalProps> = ({
       )
     },
     {
-      title: "2. Validate & Analyze via Supported ML Pipeline",
-      subtitle: "Domain Applicability Gates & Platt-Calibrated XGBoost",
+      title: "2. Validate & Analyze Dataset",
+      subtitle: "Operating Range Verification & Calibrated Risk Evaluation",
       icon: Cpu,
       accent: "text-indigo-600 bg-indigo-50 border-indigo-200",
       content: (
         <div className="space-y-4 text-xs text-slate-600">
           <p className="leading-relaxed">
-            Uploaded datasets are validated against reference operating envelopes before running through the Stage 3 production XGBoost model refitted with Platt sigmoid calibration.
+            Uploaded datasets are validated against reference operational boundaries before running through calibrated predictive models.
           </p>
           <div className="space-y-2.5">
             <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 flex items-start gap-3">
               <div className="w-6 h-6 rounded-lg bg-indigo-100 text-indigo-700 font-bold flex items-center justify-center shrink-0">1</div>
               <div>
-                <span className="font-bold text-slate-800 text-[11px] block">Domain Applicability Pre-Check</span>
+                <span className="font-bold text-slate-800 text-[11px] block">Operational Range Pre-Check</span>
                 <p className="text-[11px] text-slate-500 mt-0.5">
-                  Flags Out-of-Distribution (OOD) readings that exceed reference training bounds to alert engineers of extrapolation risks.
+                  Flags readings that exceed reference operational boundaries to alert engineers of potential extrapolation.
                 </p>
               </div>
             </div>
             <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 flex items-start gap-3">
               <div className="w-6 h-6 rounded-lg bg-indigo-100 text-indigo-700 font-bold flex items-center justify-center shrink-0">2</div>
               <div>
-                <span className="font-bold text-slate-800 text-[11px] block">Platt Probability Calibration</span>
+                <span className="font-bold text-slate-800 text-[11px] block">Probability Calibration</span>
                 <p className="text-[11px] text-slate-500 mt-0.5">
-                  Converts raw tree margin scores into calibrated failure probabilities P(failure | z) ∈ [0, 1] using post-hoc logistic scaling.
+                  Converts raw model scoring margins into true calibrated probabilities so estimated risk percentages reflect realistic failure frequencies.
                 </p>
               </div>
             </div>
             <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 flex items-start gap-3">
               <div className="w-6 h-6 rounded-lg bg-indigo-100 text-indigo-700 font-bold flex items-center justify-center shrink-0">3</div>
               <div>
-                <span className="font-bold text-slate-800 text-[11px] block">Operational Decision Bands (&tau;* = 0.0100)</span>
+                <span className="font-bold text-slate-800 text-[11px] block">Operational Risk Thresholds (1.0% High Risk)</span>
                 <p className="text-[11px] text-slate-500 mt-0.5">
-                  Threshold bands (HIGH: p &ge; 1.0%, MEDIUM: 0.5% &le; p &lt; 1.0%, LOW: p &lt; 0.5%) are cost-optimized decision thresholds derived from a 50:1 false-negative penalty, not universally validated physical machine health states.
+                  Threshold tiers (HIGH: ≥ 1.0%, MEDIUM: 0.5% – 1.0%, LOW: &lt; 0.5%) are cost-sensitive decision bands derived from the high cost of undetected equipment downtime versus routine inspection.
                 </p>
               </div>
             </div>
@@ -111,32 +111,32 @@ export const HowItWorksModal: React.FC<HowItWorksModalProps> = ({
     },
     {
       title: "3. Review Failure Risks, Explanations & Reports",
-      subtitle: "TreeSHAP Attributions & Advisory Engineering Decision Support",
+      subtitle: "Contributing Factors & Advisory Engineering Decision Support",
       icon: Sparkles,
       accent: "text-amber-600 bg-amber-50 border-amber-200",
       content: (
         <div className="space-y-4 text-xs text-slate-600">
           <p className="leading-relaxed">
-            Review estimated failure probabilities, inspect feature contributions, and export audit reports. Predictions are decision-support estimates with no implied time horizon and do not execute automated machine shutdowns.
+            Review estimated failure probabilities, inspect primary risk factors, and export audit reports. Predictions are decision-support estimates with no implied time horizon and do not execute automated machine shutdowns.
           </p>
           <div className="grid grid-cols-2 gap-2.5">
             <div className="p-3 bg-rose-50 rounded-xl border border-rose-200">
-              <span className="font-bold text-rose-800 text-[11px] block">Positive Risk Drivers (+φ)</span>
+              <span className="font-bold text-rose-800 text-[11px] block">Positive Risk Drivers (+)</span>
               <p className="text-[11px] text-rose-700 mt-0.5">
-                Observed sensor values that increased the model failure score relative to baseline prevalence.
+                Observed sensor values that increased the estimated risk of equipment failure.
               </p>
             </div>
             <div className="p-3 bg-emerald-50 rounded-xl border border-emerald-200">
-              <span className="font-bold text-emerald-800 text-[11px] block">Dampening Factors (-φ)</span>
+              <span className="font-bold text-emerald-800 text-[11px] block">Dampening Factors (-)</span>
               <p className="text-[11px] text-emerald-700 mt-0.5">
-                Observed operating features in normal ranges that lowered the model failure estimate.
+                Operating features in normal ranges that lowered the estimated failure probability.
               </p>
             </div>
           </div>
           <div className="p-3 bg-amber-50/70 border border-amber-200 rounded-xl flex items-start gap-2.5 text-amber-900">
             <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
             <div className="text-[11px]">
-              <strong className="font-bold">Advisory Engineering Decision Support:</strong> SHAP values indicate statistical model associations, not physical mechanical causation. Predictions do not estimate time-to-failure or remaining useful life. Use predictions to prioritize routine physical inspections, never as autonomous emergency shutdown triggers.
+              <strong className="font-bold">Advisory Engineering Decision Support:</strong> Contributing factor values indicate statistical associations, not mechanical wear causation. Predictions do not estimate time-to-failure or remaining useful life. Use predictions to prioritize routine physical inspections, never as autonomous emergency shutdown triggers.
             </div>
           </div>
         </div>

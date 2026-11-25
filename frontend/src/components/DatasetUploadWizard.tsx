@@ -143,7 +143,7 @@ export const DatasetUploadWizard: React.FC<DatasetUploadWizardProps> = ({ machin
     if (!file) return;
     setError(null);
     setLoading(true);
-    setUploadProgressText('Creating dataset batch record in Neon database...');
+    setUploadProgressText('Creating dataset record...');
 
     try {
       // 1. Create dataset
@@ -462,7 +462,7 @@ export const DatasetUploadWizard: React.FC<DatasetUploadWizardProps> = ({ machin
                     : 'text-slate-600 hover:text-slate-900'
                 }`}
               >
-                Standard Profile: 5 Sensors (NO_TYPE • Config B)
+                Standard Profile: 5 Core Operating Sensors
               </button>
               <button
                 type="button"
@@ -473,7 +473,7 @@ export const DatasetUploadWizard: React.FC<DatasetUploadWizardProps> = ({ machin
                     : 'text-slate-600 hover:text-slate-900'
                 }`}
               >
-                Extended Profile: 6 Sensors with Quality Variant (WITH_TYPE • Config A)
+                Extended Profile: 6 Sensors (Includes Product Variant)
               </button>
             </div>
 
@@ -618,7 +618,7 @@ export const DatasetUploadWizard: React.FC<DatasetUploadWizardProps> = ({ machin
             <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl flex items-start gap-2 text-[11px] text-slate-600">
               <Info className="w-4 h-4 text-sky-600 shrink-0 mt-0.5" />
               <span>
-                <strong>Automatic Normalization:</strong> Temperatures are converted to Kelvin, Rotational Speed to RPM, Torque to N·m, and Tool Wear to minutes prior to XGBoost tree evaluation.
+                <strong>Automatic Normalization:</strong> Temperatures are converted to Kelvin, Rotational Speed to RPM, Torque to N·m, and Tool Wear to minutes prior to predictive risk analysis.
               </span>
             </div>
 

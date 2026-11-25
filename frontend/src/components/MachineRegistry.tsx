@@ -61,7 +61,7 @@ export const MachineRegistry: React.FC<MachineRegistryProps> = ({ onSelectUpload
   };
 
   const handleArchive = async (id: string) => {
-    if (confirm('Archive this machine? Archived machines reject new datasets (AC-MM-2).')) {
+    if (confirm('Archive this machine? Archived machines cannot accept new datasets.')) {
       try {
         await api.machines.archive(id);
         loadData();

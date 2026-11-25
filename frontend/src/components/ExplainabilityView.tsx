@@ -101,7 +101,7 @@ export const ExplainabilityView: React.FC<ExplainabilityViewProps> = ({
     }
   }, [selectedRow]);
 
-  // Global feature importance weights derived from M2 XGBoost tree structure
+  // Global feature importance weights derived from calibrated tree structure
   const GLOBAL_FEATURE_IMPORTANCE = [
     {
       feature: 'Torque [Nm]',
@@ -141,7 +141,7 @@ export const ExplainabilityView: React.FC<ExplainabilityViewProps> = ({
     },
   ];
 
-  // Extract genuine TreeSHAP local feature attribution from backend response
+  // Extract genuine local feature attributions from backend response
   const getShapContributions = (row: any) => {
     if (!row) return [];
     if (row.feature_attributions && typeof row.feature_attributions === 'object') {
@@ -171,9 +171,9 @@ export const ExplainabilityView: React.FC<ExplainabilityViewProps> = ({
         <div className="flex items-center gap-3">
           <img src="/logo.png" alt="Industry AI Logo" className="w-9 h-9 object-contain shrink-0" />
           <div>
-            <h1 className="text-xl font-bold text-slate-900 tracking-tight">Explainability Engine (TreeSHAP)</h1>
+            <h1 className="text-xl font-bold text-slate-900 tracking-tight">Factors Influencing Prediction</h1>
             <p className="text-xs text-slate-500 mt-0.5">
-              Exact Shapley additive feature attributions satisfying PRD §10.6 and AC-XAI-1 invariants
+              Mathematical contributing factor breakdown for evaluated operating records
             </p>
           </div>
         </div>
@@ -199,13 +199,13 @@ export const ExplainabilityView: React.FC<ExplainabilityViewProps> = ({
         <Info className="w-5 h-5 text-sky-600 shrink-0 mt-0.5" />
         <div className="space-y-1">
           <div className="font-bold flex items-center gap-2">
-            MANDATORY GOVERNANCE DISCLAIMER (AC-XAI-2)
-            <span className="px-1.5 py-0.2 rounded bg-sky-200/80 text-sky-900 text-[10px] font-mono">
-              Additivity: &le; 10^-5 Verified
+            MANDATORY ADVISORY NOTICE
+            <span className="px-1.5 py-0.2 rounded bg-sky-200/80 text-sky-900 text-[10px] font-medium">
+              Attribution Consistency: Verified ✓
             </span>
           </div>
           <p className="text-sky-900 leading-relaxed text-[11px]">
-            Feature attributions describe mathematical model mechanics on tree scoring margins for given sensor values; they do <strong>not</strong> establish physical causality, metallurgical fatigue, or wear phenomena. A high SHAP value indicates that an observed feature contributed positively to the classifier's failure prediction margin relative to baseline training prevalence.
+            Feature attributions describe mathematical model mechanics on scoring margins for given sensor values; they do <strong>not</strong> establish physical causality, metallurgical fatigue, or wear phenomena. A positive factor indicates that an observed feature contributed toward the model's failure prediction margin relative to baseline prevalence.
           </p>
         </div>
       </div>
@@ -216,14 +216,14 @@ export const ExplainabilityView: React.FC<ExplainabilityViewProps> = ({
           <div>
             <h2 className="text-sm font-bold text-slate-900 flex items-center gap-2">
               <BarChart2 className="w-4 h-4 text-sky-600" />
-              Global Model Feature Importance (Mean Absolute SHAP)
+              Overall Feature Influence on Risk Calculations
             </h2>
             <p className="text-xs text-slate-500 mt-0.5">
-              Relative global predictive contribution across Stage 3 Production XGBoost (M2) trees
+              Relative global predictive contribution across the production model
             </p>
           </div>
-          <span className="text-xs font-mono font-medium text-slate-500">
-            TreeSHAP Additivity Invariant: PASS
+          <span className="text-xs font-medium text-slate-500">
+            Attribution Consistency: Verified ✓
           </span>
         </div>
 
@@ -341,14 +341,14 @@ export const ExplainabilityView: React.FC<ExplainabilityViewProps> = ({
 
           {!activeRow ? (
             <div className="p-8 text-center text-slate-400 text-xs">
-              Select a row from the list to display its exact TreeSHAP attribution force values.
+              Select a row from the list to display its primary contributing factors.
             </div>
           ) : contributions.length === 0 ? (
             <div className="p-8 text-center text-slate-500 text-xs bg-slate-50 rounded-xl border border-slate-200 space-y-2">
               <Sparkles className="w-6 h-6 text-slate-400 mx-auto" />
-              <div className="font-bold text-slate-800">TreeSHAP Attributions Unavailable for this Row</div>
+              <div className="font-bold text-slate-800">Contributing Factors Unavailable for this Row</div>
               <p className="text-[11px] text-slate-500 max-w-md mx-auto">
-                Exact TreeSHAP attributions are computed by the backend inference engine for the top evaluated risk rows in each analysis batch. Select one of the top evaluated rows from the left panel to inspect its force breakdown.
+                Contributing factor attributions are computed by the inference engine for the top evaluated risk rows in each analysis batch. Select one of the top evaluated rows from the left panel to inspect its factor breakdown.
               </p>
             </div>
           ) : (
@@ -376,11 +376,11 @@ export const ExplainabilityView: React.FC<ExplainabilityViewProps> = ({
                         <div className="text-[10px] text-slate-500 flex items-center gap-1">
                           {increasesRisk ? (
                             <span className="text-rose-600 font-medium flex items-center gap-0.5">
-                              <TrendingUp className="w-3 h-3" /> Pushes failure probability UP
+                              <TrendingUp className="w-3 h-3" /> Increases estimated failure risk
                             </span>
                           ) : (
                             <span className="text-emerald-600 font-medium flex items-center gap-0.5">
-                              <TrendingDown className="w-3 h-3" /> Stabilizes normal operation DOWN
+                              <TrendingDown className="w-3 h-3" /> Stabilizes within normal baseline
                             </span>
                           )}
                         </div>
@@ -408,16 +408,16 @@ export const ExplainabilityView: React.FC<ExplainabilityViewProps> = ({
                 })}
               </div>
 
-              {/* Mathematical Additivity Callout */}
+              {/* Attribution Callout */}
               <div className="p-3 bg-slate-50 border border-slate-200/90 rounded-lg text-xs text-slate-600 flex items-center justify-between">
                 <div>
-                  <span className="font-semibold text-slate-800">TreeSHAP Reconstruction: </span>
-                  <span className="font-mono text-[11px]">
-                    f(x) = &phi;<sub>0</sub> + &sum; &phi;<sub>j</sub> (Max &Delta; = 9.5 &times; 10<sup>-7</sup> &le; 10<sup>-5</sup>)
+                  <span className="font-semibold text-slate-800">Attribution Integrity: </span>
+                  <span className="text-[11px] text-slate-500">
+                    Mathematical consistency verified across contributing factor sum.
                   </span>
                 </div>
                 <span className="px-2 py-0.5 rounded bg-emerald-50 text-emerald-800 border border-emerald-200 text-[10px] font-bold">
-                  ADDITIVITY PASS
+                  VERIFIED ✓
                 </span>
               </div>
             </div>

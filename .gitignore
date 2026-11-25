@@ -106,4 +106,8 @@ frontend/node_modules/
 frontend/dist/
 frontend/.vite/
 
+# Agent configuration & skills
+.agents/
+skills-lock.json
+
 

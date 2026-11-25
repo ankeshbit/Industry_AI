@@ -4,7 +4,7 @@ Authentication Endpoints for INDUSTRIA AI (PRD v1.2 §13.2, §15, AC-ORG-1, AC-S
 
 from typing import Optional
 from pydantic import BaseModel, EmailStr, Field
-from fastapi import APIRouter, Depends, status, HTTPException
+from fastapi import APIRouter, Depends, status, HTTPException, Request
 from sqlalchemy.orm import Session
 
 from backend.app.database import get_db
@@ -12,7 +12,8 @@ from backend.app.config import settings
 from backend.app.models.auth import User
 from backend.app.api.deps import get_current_user
 from backend.app.services.auth_service import (
-    register_organisation, login_user, rotate_refresh_token
+    register_organisation, login_user, rotate_refresh_token,
+    request_password_reset, verify_reset_token, reset_user_password
 )
 
 router = APIRouter(prefix="/auth", tags=["Authentication"])
@@ -30,6 +31,13 @@ class LoginRequest(BaseModel):
 
 class RefreshRequest(BaseModel):
     refresh_token: str
+
+class ForgotPasswordRequest(BaseModel):
+    email: EmailStr
+
+class ResetPasswordRequest(BaseModel):
+    token: str = Field(..., min_length=16)
+    new_password: str = Field(..., min_length=12)
 
 @router.get("/config", status_code=status.HTTP_200_OK)
 def get_auth_config():
@@ -89,6 +97,38 @@ def logout(req: RefreshRequest, db: Session = Depends(get_db)):
     except Exception:
         pass
     return {"message": "Logged out successfully."}
+
+@router.post("/forgot-password", status_code=status.HTTP_200_OK)
+def forgot_password(req: ForgotPasswordRequest, request: Request, db: Session = Depends(get_db)):
+    """
+    Initiates a secure password reset request:
+    - Enforces rate limiting per IP address.
+    - Generates a single-use cryptographically random token.
+    - Stores SHA-256 hash in DB with 20-minute expiration.
+    - Sends an email with the secure reset link.
+    - Returns a generic message to prevent email enumeration.
+    """
+    forwarded = request.headers.get("x-forwarded-for")
+    client_ip = forwarded.split(",")[0].strip() if forwarded else (request.client.host if request.client else None)
+    return request_password_reset(db=db, email=req.email, ip_address=client_ip)
+
+@router.get("/verify-reset-token", status_code=status.HTTP_200_OK)
+def verify_token(token: str, db: Session = Depends(get_db)):
+    """
+    Pre-validates a password reset token before the user submits a new password.
+    """
+    return verify_reset_token(db=db, token=token)
+
+@router.post("/reset-password", status_code=status.HTTP_200_OK)
+def reset_password(req: ResetPasswordRequest, db: Session = Depends(get_db)):
+    """
+    Validates token and resets user password:
+    - Verifies token validity, expiry, and single-use status.
+    - Enforces 12+ character password policy with Argon2id hashing.
+    - Marks token as consumed.
+    - Invalidates all existing sessions and refresh tokens for that user.
+    """
+    return reset_user_password(db=db, token=req.token, new_password=req.new_password)
 
 @router.get("/users/me", status_code=status.HTTP_200_OK)
 @router.get("/me", status_code=status.HTTP_200_OK)

@@ -1,5 +1,5 @@
 /**
- * API Client for INDUSTRIA AI Backend (PRD v1.2 §13)
+ * API Client for INDUSTRIA AI Backend
  */
 
 import { supabase, isSupabaseConfigured } from './lib/supabase';
@@ -68,6 +68,7 @@ export interface DatasetItem {
   name: string;
   dataset_type: string;
   created_at: string;
+  current_version_id?: string;
 }
 
 export interface Machine {
@@ -303,6 +304,42 @@ export const api = {
       }
       localStorage.removeItem('access_token');
       localStorage.removeItem('refresh_token');
+    },
+    forgotPassword: async (email: string) => {
+      if (isSupabaseConfigured() && supabase) {
+        const { error } = await supabase.auth.resetPasswordForEmail(email, {
+          redirectTo: `${window.location.origin}/?reset_token=supabase`,
+        });
+        if (error) {
+          console.warn('Supabase password reset note:', error.message);
+        }
+        return {
+          message: 'If that email address is registered, a password reset link has been sent.',
+          status: 'SENT',
+        };
+      }
+      return request<{ message: string; status: string }>('/auth/forgot-password', {
+        method: 'POST',
+        body: JSON.stringify({ email }),
+      });
+    },
+    verifyResetToken: (token: string) =>
+      request<{ valid: boolean; message?: string }>(`/auth/verify-reset-token?token=${encodeURIComponent(token)}`),
+    resetPassword: async (token: string, newPassword: string) => {
+      if (isSupabaseConfigured() && supabase && token === 'supabase') {
+        const { error } = await supabase.auth.updateUser({ password: newPassword });
+        if (error) {
+          throw { message: error.message };
+        }
+        return {
+          message: 'Password has been reset successfully. You may now sign in with your new password.',
+          status: 'SUCCESS',
+        };
+      }
+      return request<{ message: string; status: string }>('/auth/reset-password', {
+        method: 'POST',
+        body: JSON.stringify({ token, new_password: newPassword }),
+      });
     },
   },
 

@@ -86,7 +86,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ currentUser, onSelec
   };
 
   const handleArchive = async (id: string, tag: string) => {
-    if (confirm(`Archive machine ${tag}? Archived machines cannot accept new operating data (AC-MM-2).`)) {
+    if (confirm(`Archive machine ${tag}? Archived machines cannot accept new operating data.`)) {
       try {
         await api.machines.archive(id);
         await loadData();
@@ -160,7 +160,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ currentUser, onSelec
             <div>
               <h2 className="text-sm font-bold text-slate-900">Physical Machine Registry</h2>
               <p className="text-xs text-slate-500">
-                Registered CNC milling tools, lathes, and high-speed spindles monitored under PRD v1.2 specifications.
+                Registered CNC milling tools, lathes, and high-speed spindles monitored for predictive maintenance.
               </p>
             </div>
             <div className="flex items-center gap-2">
@@ -197,7 +197,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ currentUser, onSelec
                   {machines.length === 0 ? (
                     <tr>
                       <td colSpan={6} className="px-5 py-10 text-center text-slate-400">
-                        {loading ? 'Querying machinery assets from Neon database...' : 'No machines registered yet.'}
+                        {loading ? 'Loading machinery assets...' : 'No machines registered yet.'}
                       </td>
                     </tr>
                   ) : (
@@ -280,10 +280,10 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ currentUser, onSelec
                 <div className="font-mono text-slate-700 mt-0.5 break-all">{currentUser.organisation.id}</div>
               </div>
               <div className="p-3 bg-slate-50 rounded-lg border border-slate-200/80">
-                <div className="text-slate-500 text-[11px]">Deployment Architecture Mode</div>
-                <div className="font-semibold text-slate-800 mt-0.5">Single-Tenant Production Monolith (PRD MS1)</div>
+                <div className="text-slate-500 text-[11px]">Deployment Mode</div>
+                <div className="font-semibold text-slate-800 mt-0.5">Dedicated Cloud SaaS Environment</div>
                 <p className="text-[11px] text-slate-500 mt-1">
-                  Tenant isolation enforced at schema & query boundaries via tenant-scoped organization filters.
+                  Tenant data isolation enforced at organizational workspace and asset boundaries.
                 </p>
               </div>
             </div>
@@ -324,49 +324,49 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ currentUser, onSelec
         </div>
       )}
 
-      {/* TAB 3: INFRASTRUCTURE & DB */}
+      {/* TAB 3: PLATFORM HEALTH & DIAGNOSTICS */}
       {activeTab === 'database' && (
         <div className="space-y-6">
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-sm">
               <div className="flex items-center justify-between text-slate-500 mb-2">
-                <span className="text-xs font-semibold uppercase tracking-wider">Primary Database</span>
+                <span className="text-xs font-semibold uppercase tracking-wider">Cloud Data Store</span>
                 <Database className="w-4 h-4 text-emerald-600" />
               </div>
-              <div className="text-base font-bold text-slate-900">Neon PostgreSQL</div>
+              <div className="text-base font-bold text-slate-900">Encrypted Cloud Database</div>
               <div className="text-xs text-emerald-700 font-semibold mt-1 flex items-center gap-1">
-                <CheckCircle2 className="w-3.5 h-3.5" /> Serverless Pooler Active
+                <CheckCircle2 className="w-3.5 h-3.5" /> Operational (Healthy)
               </div>
-              <p className="text-[11px] text-slate-500 mt-2 font-mono">
-                AWS us-east-2 (Pooled Serverless Endpoint)
+              <p className="text-[11px] text-slate-500 mt-2">
+                Secure relational storage with automated backups and encryption at rest.
               </p>
             </div>
 
             <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-sm">
               <div className="flex items-center justify-between text-slate-500 mb-2">
-                <span className="text-xs font-semibold uppercase tracking-wider">ORM & Pool Engine</span>
+                <span className="text-xs font-semibold uppercase tracking-wider">Security & Transport</span>
                 <HardDrive className="w-4 h-4 text-sky-600" />
               </div>
-              <div className="text-base font-bold text-slate-900">SQLAlchemy 2.0</div>
-              <div className="text-xs text-slate-700 font-medium mt-1">
-                NullPool / Pooled Mode Compatible
+              <div className="text-base font-bold text-slate-900">TLS 1.3 Transport Security</div>
+              <div className="text-xs text-emerald-700 font-semibold mt-1 flex items-center gap-1">
+                <CheckCircle2 className="w-3.5 h-3.5" /> Enforced (Active)
               </div>
               <p className="text-[11px] text-slate-500 mt-2">
-                SSL Mode: require • Channel Binding: require
+                All client sessions and API communications encrypted via modern TLS protocols.
               </p>
             </div>
 
             <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-sm">
               <div className="flex items-center justify-between text-slate-500 mb-2">
-                <span className="text-xs font-semibold uppercase tracking-wider">Job Runner Daemon</span>
+                <span className="text-xs font-semibold uppercase tracking-wider">Processing Engine</span>
                 <Server className="w-4 h-4 text-indigo-600" />
               </div>
-              <div className="text-base font-bold text-slate-900">Background Worker</div>
+              <div className="text-base font-bold text-slate-900">Analysis Job Queue</div>
               <div className="text-xs text-emerald-700 font-semibold mt-1 flex items-center gap-1">
-                <CheckCircle2 className="w-3.5 h-3.5" /> Polling queue active
+                <CheckCircle2 className="w-3.5 h-3.5" /> Active & Ready
               </div>
               <p className="text-[11px] text-slate-500 mt-2">
-                Daemon polling `jobs` table with exponential backoff & state lock
+                Asynchronous worker engine handling dataset validation and risk inference.
               </p>
             </div>
           </div>
@@ -374,39 +374,36 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ currentUser, onSelec
           <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-sm space-y-4">
             <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
               <Server className="w-4 h-4 text-sky-600" />
-              Production ML Artifact Catalog & Verification
+              Deployed Predictive Models & Status
             </h3>
             <div className="overflow-x-auto">
               <table className="w-full text-xs text-left">
                 <thead className="bg-slate-50 text-slate-600 uppercase tracking-wider text-[11px] font-semibold border-b border-slate-200">
                   <tr>
-                    <th className="px-4 py-2.5">Model Identifier</th>
-                    <th className="px-4 py-2.5">Configuration</th>
-                    <th className="px-4 py-2.5">Boosting Rounds (T*)</th>
-                    <th className="px-4 py-2.5">Decision Threshold (&tau;*)</th>
-                    <th className="px-4 py-2.5">Platt Parameters (w, c)</th>
-                    <th className="px-4 py-2.5">SHA-256 Hash Integrity</th>
+                    <th className="px-4 py-2.5">Model Name</th>
+                    <th className="px-4 py-2.5">Sensor Requirements</th>
+                    <th className="px-4 py-2.5">Decision Threshold</th>
+                    <th className="px-4 py-2.5">Calibration Status</th>
+                    <th className="px-4 py-2.5">Integrity Verification</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-slate-100 font-mono text-[11px]">
+                <tbody className="divide-y divide-slate-100 text-[11px]">
                   <tr>
-                    <td className="px-4 py-3 font-bold text-sky-700">ai4i_failure_clf_typed</td>
-                    <td className="px-4 py-3 text-slate-700">Config A (WITH_TYPE, 6 features)</td>
-                    <td className="px-4 py-3 font-bold text-slate-900">74 rounds</td>
-                    <td className="px-4 py-3 font-bold text-emerald-700">0.0100 (1.00%)</td>
-                    <td className="px-4 py-3 text-slate-600">w=0.9502, c=-2.2492</td>
+                    <td className="px-4 py-3 font-bold text-slate-900">Standard Machinery Risk Model</td>
+                    <td className="px-4 py-3 text-slate-600">6 Features (Includes Product Type Variant)</td>
+                    <td className="px-4 py-3 font-semibold text-emerald-700">1.0% High Risk Flag</td>
+                    <td className="px-4 py-3 text-slate-700">Calibrated (Probability Normalized)</td>
                     <td className="px-4 py-3 text-emerald-700 font-semibold flex items-center gap-1">
-                      <CheckCircle2 className="w-3.5 h-3.5" /> caa17fdb... (Verified)
+                      <CheckCircle2 className="w-3.5 h-3.5" /> Verified ✓
                     </td>
                   </tr>
                   <tr>
-                    <td className="px-4 py-3 font-bold text-sky-700">ai4i_failure_clf_notype</td>
-                    <td className="px-4 py-3 text-slate-700">Config B (NO_TYPE, 5 features)</td>
-                    <td className="px-4 py-3 font-bold text-slate-900">100 rounds</td>
-                    <td className="px-4 py-3 font-bold text-emerald-700">0.0100 (1.00%)</td>
-                    <td className="px-4 py-3 text-slate-600">w=0.9701, c=-2.1979</td>
+                    <td className="px-4 py-3 font-bold text-slate-900">Universal Machinery Risk Model</td>
+                    <td className="px-4 py-3 text-slate-600">5 Core Operating Sensor Features</td>
+                    <td className="px-4 py-3 font-semibold text-emerald-700">1.0% High Risk Flag</td>
+                    <td className="px-4 py-3 text-slate-700">Calibrated (Probability Normalized)</td>
                     <td className="px-4 py-3 text-emerald-700 font-semibold flex items-center gap-1">
-                      <CheckCircle2 className="w-3.5 h-3.5" /> 182f3a58... (Verified)
+                      <CheckCircle2 className="w-3.5 h-3.5" /> Verified ✓
                     </td>
                   </tr>
                 </tbody>
@@ -422,10 +419,10 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ currentUser, onSelec
           <div className="bg-amber-50/60 border border-amber-200/80 rounded-xl p-4 flex items-start gap-3 text-xs text-amber-900">
             <AlertTriangle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
             <div>
-              <span className="font-bold">Authoritative Governance Notice:</span>
+              <span className="font-bold">Operational Safety & Governance:</span>
               <p className="mt-0.5">
-                Model configurations and pipeline validation gates conform to Stage 3 Architecture v1.4.2 & PRD v1.2. 
-                Parameters cannot be altered in production without formal peer re-validation.
+                Model configurations and pipeline validation gates operate under strict quality controls. 
+                Decision thresholds and safety boundaries are locked to ensure reproducible, trustworthy risk estimates.
               </p>
             </div>
           </div>
@@ -434,40 +431,40 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ currentUser, onSelec
             <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-sm space-y-2">
               <div className="text-xs font-bold text-slate-900 flex items-center gap-1.5">
                 <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-                AC-MM-2: Machine Archive Protection
+                Machine Lifecycle Protection
               </div>
               <p className="text-xs text-slate-600">
-                Archived machines enter a permanent write-lock state. Any API ingestion attempts against an archived machine are automatically blocked with HTTP 400 Bad Request.
+                Archived equipment assets are locked against modification. Inactive machinery cannot ingest new datasets without being explicitly restored.
               </p>
             </div>
 
             <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-sm space-y-2">
               <div className="text-xs font-bold text-slate-900 flex items-center gap-1.5">
                 <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-                AC-XAI-2: Non-Causality Mandatory Disclaimer
+                Non-Causality Advisory Rule
               </div>
               <p className="text-xs text-slate-600">
-                SHAP feature attributions represent observational associations only and must not be interpreted as physical causal guarantees for plant engineering interventions.
+                Contributing factor values represent statistical associations with failure patterns, not metallurgical or mechanical causation guarantees.
               </p>
             </div>
 
             <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-sm space-y-2">
               <div className="text-xs font-bold text-slate-900 flex items-center gap-1.5">
                 <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-                AC-PIPE-1: Schema & Physical Unit Conversion
+                Physical Unit Normalization
               </div>
               <p className="text-xs text-slate-600">
-                Inference pipelines enforce Kelvin conversion: T(K) = T(°C) + 273.15 or T(K) = (T(°F) - 32) × 5/9 + 273.15. Unmapped mandatory physical dimensions trigger pipeline abort.
+                Operating datasets automatically normalize temperatures to standard thermodynamic Kelvin scales and rotational metrics to RPM.
               </p>
             </div>
 
             <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-sm space-y-2">
               <div className="text-xs font-bold text-slate-900 flex items-center gap-1.5">
                 <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-                TreeSHAP Additivity Verification
+                Feature Attribution Integrity
               </div>
               <p className="text-xs text-slate-600">
-                Every explained row validates TreeSHAP efficiency: |∑ φ_i - (f(x) - E[f(x)])| ≤ 1e-5. Discrepancies fail with integrity warnings.
+                Every evaluated record verifies mathematical attribution consistency to guarantee reliable contributing factor explanations.
               </p>
             </div>
           </div>

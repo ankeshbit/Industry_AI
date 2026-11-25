@@ -2,12 +2,9 @@ import React from 'react';
 import {
   LayoutDashboard,
   Database,
-  GitBranch,
   Activity,
-  Sparkles,
   FileText,
   Settings,
-  Shield,
   ChevronLeft,
   ChevronRight,
   LogOut,
@@ -17,13 +14,16 @@ import {
 import { User } from '../api';
 
 export type NavSection =
-  | 'dashboard'
+  | 'overview'
   | 'datasets'
+  | 'analysis'
+  | 'reports'
+  | 'settings'
+  // Backward compatibility aliases
+  | 'dashboard'
   | 'pipeline'
   | 'predictions'
-  | 'explainability'
-  | 'reports'
-  | 'settings';
+  | 'explainability';
 
 interface SidebarProps {
   activeSection: NavSection;
@@ -44,48 +44,31 @@ interface NavItem {
   description: string;
 }
 
-const NAV_ITEMS: NavItem[] = [
+// Primary Navigation Sections
+const PRIMARY_NAV_ITEMS: NavItem[] = [
   {
-    id: 'dashboard',
-    label: 'Dashboard',
+    id: 'overview',
+    label: 'Overview',
     icon: LayoutDashboard,
-    description: 'Equipment catalog & dataset analytics overview',
+    description: 'Workspace summary & quick upload',
   },
   {
     id: 'datasets',
-    label: 'Datasets',
+    label: 'My Datasets',
     icon: Database,
-    description: 'Dataset uploads, schemas & validation',
+    description: 'Upload, validate & manage machine data',
   },
   {
-    id: 'pipeline',
-    label: 'ML Pipeline',
-    icon: GitBranch,
-    description: 'Lifecycle stages, model registry & jobs',
-  },
-  {
-    id: 'predictions',
-    label: 'Predictions & Analytics',
+    id: 'analysis',
+    label: 'Analysis',
     icon: Activity,
-    description: 'Calibrated failure risk & evaluation curves',
-  },
-  {
-    id: 'explainability',
-    label: 'Explainability',
-    icon: Sparkles,
-    description: 'TreeSHAP margin attributions & feature impact',
+    description: 'Prepare, run analysis & review predictions',
   },
   {
     id: 'reports',
-    label: 'Reports & Governance',
+    label: 'Reports',
     icon: FileText,
-    description: 'Model cards, benchmark audits & provenance',
-  },
-  {
-    id: 'settings',
-    label: 'Settings & Machinery',
-    icon: Settings,
-    description: 'Equipment registry & workspace configuration',
+    description: 'View & export generated maintenance reports',
   },
 ];
 
@@ -99,6 +82,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
   isMobileOpen,
   onCloseMobile,
 }) => {
+  // Map legacy aliases to primary sections
+  const normalizedActive =
+    activeSection === 'dashboard' ? 'overview' :
+    (activeSection === 'pipeline' || activeSection === 'predictions' || activeSection === 'explainability') ? 'analysis' :
+    activeSection;
+
   return (
     <>
       {/* Mobile Backdrop */}
@@ -164,11 +153,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
           </div>
         )}
 
-        {/* Navigation Items */}
+        {/* Primary 4 Navigation Items */}
         <nav className="flex-1 px-3 py-3 space-y-1 overflow-y-auto">
-          {NAV_ITEMS.map((item) => {
+          {PRIMARY_NAV_ITEMS.map((item) => {
             const Icon = item.icon;
-            const isActive = activeSection === item.id;
+            const isActive = normalizedActive === item.id;
 
             return (
               <button
@@ -201,6 +190,31 @@ export const Sidebar: React.FC<SidebarProps> = ({
             );
           })}
         </nav>
+
+        {/* Bottom Section: Settings */}
+        <div className="px-3 py-2 border-t border-slate-100">
+          <button
+            onClick={() => {
+              onSelectSection('settings');
+              onCloseMobile();
+            }}
+            className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-xs font-medium transition-all group relative ${
+              normalizedActive === 'settings'
+                ? 'bg-sky-50 text-sky-900 font-semibold border-l-4 border-sky-600 shadow-xs'
+                : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
+            } ${isCollapsed ? 'justify-center px-0' : ''}`}
+            title={isCollapsed ? 'Settings & Machinery' : undefined}
+          >
+            <Settings
+              className={`w-4 h-4 shrink-0 transition-colors ${
+                normalizedActive === 'settings' ? 'text-sky-600' : 'text-slate-400 group-hover:text-slate-600'
+              }`}
+            />
+            {!isCollapsed && (
+              <span className="truncate text-left flex-1">Settings</span>
+            )}
+          </button>
+        </div>
 
         {/* User Profile & Sign Out Footer */}
         <div className="p-3 border-t border-slate-200 bg-slate-50/70">
@@ -245,3 +259,5 @@ export const Sidebar: React.FC<SidebarProps> = ({
     </>
   );
 };
+
+export default Sidebar;

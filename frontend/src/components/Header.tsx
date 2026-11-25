@@ -1,5 +1,5 @@
 import React from 'react';
-import { Menu, ChevronRight, Database, Cpu, UploadCloud, CheckCircle2, HelpCircle } from 'lucide-react';
+import { Menu, ChevronRight, UploadCloud, HelpCircle } from 'lucide-react';
 import { NavSection } from './Sidebar';
 
 interface HeaderProps {
@@ -10,14 +10,16 @@ interface HeaderProps {
   onOpenHowItWorks?: () => void;
 }
 
-const SECTION_TITLES: Record<NavSection, string> = {
-  dashboard: 'Dashboard',
-  datasets: 'Dataset Management',
-  pipeline: 'ML Execution Pipeline',
-  predictions: 'Predictions & Analytics',
-  explainability: 'Explainability & Feature Attribution',
-  reports: 'Reports & Model Governance',
-  settings: 'Settings & Machinery Registry',
+const SECTION_TITLES: Record<string, string> = {
+  overview: 'Overview',
+  dashboard: 'Overview',
+  datasets: 'My Datasets',
+  analysis: 'Analysis',
+  pipeline: 'Analysis',
+  predictions: 'Analysis',
+  explainability: 'Analysis',
+  reports: 'Reports',
+  settings: 'Settings & Machinery',
 };
 
 export const Header: React.FC<HeaderProps> = ({
@@ -27,6 +29,8 @@ export const Header: React.FC<HeaderProps> = ({
   onQuickUpload,
   onOpenHowItWorks,
 }) => {
+  const currentTitle = SECTION_TITLES[activeSection] || 'Overview';
+
   return (
     <header className="h-16 bg-white border-b border-slate-200 sticky top-0 z-30 flex items-center justify-between px-4 sm:px-6">
       {/* Left: Mobile Toggle & Breadcrumbs */}
@@ -50,7 +54,7 @@ export const Header: React.FC<HeaderProps> = ({
           </span>
           <ChevronRight className="w-3.5 h-3.5 text-slate-300 hidden sm:inline" />
           <span className="font-semibold text-slate-800">
-            {SECTION_TITLES[activeSection]}
+            {currentTitle}
           </span>
           {subTitle && (
             <>
@@ -70,7 +74,7 @@ export const Header: React.FC<HeaderProps> = ({
           <button
             onClick={onOpenHowItWorks}
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-xs font-semibold text-slate-700 transition-colors shadow-xs"
-            title="Open 3-Step Predictive Maintenance Architecture Guide"
+            title="How INDUSTRIA AI Works"
           >
             <HelpCircle className="w-3.5 h-3.5 text-sky-600" />
             <span className="hidden sm:inline">How It Works</span>
@@ -80,14 +84,14 @@ export const Header: React.FC<HeaderProps> = ({
         {/* Quick Upload Action */}
         <button
           onClick={onQuickUpload}
-          className="bg-sky-600 hover:bg-sky-700 text-white text-xs font-semibold px-3 py-1.5 rounded-lg flex items-center gap-1.5 shadow-xs transition-colors"
+          className="bg-sky-600 hover:bg-sky-700 text-white text-xs font-semibold px-3.5 py-1.5 rounded-lg flex items-center gap-1.5 shadow-xs transition-colors"
         >
           <UploadCloud className="w-3.5 h-3.5 text-white" />
-          <span className="hidden sm:inline">Upload Dataset</span>
-          <span className="sm:hidden">Upload</span>
+          <span>Upload Dataset</span>
         </button>
       </div>
     </header>
   );
 };
+
 export default Header;
