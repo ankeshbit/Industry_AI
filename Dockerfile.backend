@@ -19,6 +19,9 @@ COPY ml /app/ml
 COPY samples /app/samples
 COPY docs /app/docs
 
+# Verify / provision production model artifacts
+RUN python -m ml.src.models.provision_artifacts
+
 ENV PYTHONPATH=/app
 ENV PYTHONUNBUFFERED=1
 

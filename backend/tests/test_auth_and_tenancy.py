@@ -221,8 +221,8 @@ def test_tenant_tables_have_organisation_id(db_session):
     inspector = inspect(db_session.bind)
     table_names = inspector.get_table_names()
 
-    # Global tables without organisation_id
-    global_tables = {"machine_categories", "pipeline_profiles", "model_versions", "model_evaluations", "organisations"}
+    # Global tables without mandatory organisation_id
+    global_tables = {"machine_categories", "pipeline_profiles", "model_versions", "model_evaluations", "organisations", "rate_limit_attempts"}
 
     for table in table_names:
         if table in global_tables:

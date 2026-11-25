@@ -33,6 +33,15 @@ class Settings:
     MAX_FAILED_LOGIN_ATTEMPTS: int = 5
     LOCKOUT_DURATION_MINUTES: int = 15
 
+    # Rate Limiting & Reverse Proxy Security Settings
+    TRUSTED_PROXIES: list = [
+        p.strip() for p in os.getenv("TRUSTED_PROXIES", "127.0.0.1,::1,localhost,testclient").split(",") if p.strip()
+    ]
+    RATE_LIMIT_RESET_IP_MAX: int = int(os.getenv("RATE_LIMIT_RESET_IP_MAX", "5"))
+    RATE_LIMIT_RESET_IP_WINDOW_SECONDS: int = int(os.getenv("RATE_LIMIT_RESET_IP_WINDOW_SECONDS", "900"))  # 15 min
+    RATE_LIMIT_RESET_EMAIL_MAX: int = int(os.getenv("RATE_LIMIT_RESET_EMAIL_MAX", "3"))
+    RATE_LIMIT_RESET_EMAIL_WINDOW_SECONDS: int = int(os.getenv("RATE_LIMIT_RESET_EMAIL_WINDOW_SECONDS", "900"))  # 15 min
+
     # Password Reset & Email Settings
     PASSWORD_RESET_TOKEN_EXPIRE_MINUTES: int = 20
     FRONTEND_URL: str = os.getenv("FRONTEND_URL", "http://localhost:3000").rstrip("/")
@@ -63,6 +72,12 @@ class Settings:
         _raw_db_url = _raw_db_url.replace("postgresql://", "postgresql+psycopg2://", 1)
     DATABASE_URL: str = _raw_db_url
     
+    # Job Queue & Execution Settings (PRD v1.2 §8.5)
+    JOB_EXECUTION_MODE: str = os.getenv("JOB_EXECUTION_MODE", "inline").lower()  # "inline" or "async"
+    JOB_HEARTBEAT_INTERVAL_SECONDS: float = float(os.getenv("JOB_HEARTBEAT_INTERVAL_SECONDS", "2.0"))
+    JOB_STALE_TIMEOUT_SECONDS: int = int(os.getenv("JOB_STALE_TIMEOUT_SECONDS", "60"))
+    JOB_MAX_ATTEMPTS: int = int(os.getenv("JOB_MAX_ATTEMPTS", "3"))
+
     # Storage (PRD v1.2 §12.3)
     # Keys always follow org/{organisation_id}/datasets/{id}/v{n}/{uuid}.csv
     BASE_DIR: Path = Path(__file__).resolve().parent.parent.parent

@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 from backend.app.database import get_db
 from backend.app.models.auth import User
 from backend.app.models.job import Job
+from backend.app.models.analysis import AnalysisResult
 from backend.app.api.deps import get_current_user
 
 router = APIRouter(tags=["Jobs"])
@@ -27,6 +28,15 @@ def get_job(
     if not job:
         raise HTTPException(status_code=404, detail="Job not found.")
 
+    res_id = None
+    if job.job_type == "RUN_ANALYSIS":
+        res_record = db.query(AnalysisResult.id).filter(
+            AnalysisResult.job_id == job.id,
+            AnalysisResult.organisation_id == current_user.organisation_id
+        ).first()
+        if res_record:
+            res_id = res_record[0]
+
     return {
         "id": job.id,
         "job_type": job.job_type,
@@ -34,8 +44,11 @@ def get_job(
         "progress_percent": job.progress_percent,
         "current_step": job.current_step,
         "attempt": job.attempt,
+        "claimed_by": job.claimed_by,
+        "heartbeat_at": job.heartbeat_at.isoformat() if job.heartbeat_at else None,
         "error_code": job.error_code,
         "user_message": job.user_message,
+        "analysis_result_id": res_id,
         "created_at": job.created_at.isoformat(),
         "finished_at": job.finished_at.isoformat() if job.finished_at else None
     }

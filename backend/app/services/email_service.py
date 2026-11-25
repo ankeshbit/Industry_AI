@@ -5,7 +5,10 @@ Supports SMTP with STARTTLS/SSL, professional HTML/text templates, and a thread-
 in-memory outbox for local development and automated testing.
 """
 
+import html
+import ssl
 import smtplib
+from urllib.parse import urlparse
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from datetime import datetime
@@ -34,8 +37,29 @@ def get_latest_reset_link_for_email(email: str) -> Optional[str]:
             return item.get("reset_url")
     return None
 
+def validate_reset_url(url: str) -> bool:
+    """Validates that reset URL uses http or https and has a valid netloc."""
+    try:
+        parsed = urlparse(url)
+        return parsed.scheme in ("http", "https") and bool(parsed.netloc)
+    except Exception:
+        return False
+
+def _sanitize_header(val: str) -> str:
+    """Removes newlines to prevent SMTP header injection."""
+    return val.replace("\r", "").replace("\n", "").strip()
+
+def _mask_email(email: str) -> str:
+    """Masks an email for safe operational logging (e.g. j***@example.com)."""
+    if "@" not in email:
+        return "***"
+    user, domain = email.split("@", 1)
+    masked_user = user[0] + "***" if user else "***"
+    return f"{masked_user}@{domain}"
+
 def build_password_reset_html(recipient_name: str, reset_url: str, expire_minutes: int) -> str:
-    name_display = recipient_name if recipient_name else "Engineer"
+    escaped_name = html.escape(recipient_name if recipient_name else "Engineer", quote=True)
+    escaped_url = html.escape(reset_url, quote=True)
     return f"""<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -64,19 +88,19 @@ def build_password_reset_html(recipient_name: str, reset_url: str, expire_minute
       <p>Industrial Predictive Maintenance</p>
     </div>
     <div class="content">
-      <div class="greeting">Hello {name_display},</div>
+      <div class="greeting">Hello {escaped_name},</div>
       <p class="paragraph">
         We received a request to reset the password for your INDUSTRIA AI engineering account. Click the secure button below to set a new password.
       </p>
       <div class="button-container">
-        <a href="{reset_url}" target="_blank" class="button">Reset Password</a>
+        <a href="{escaped_url}" target="_blank" class="button">Reset Password</a>
       </div>
       <div class="notice">
         <strong>Security Notice:</strong> This link is single-use and will expire in <strong>{expire_minutes} minutes</strong>. If you did not request a password reset, you can safely ignore this email; your existing password will remain unchanged.
       </div>
       <div class="link-alt">
         If the button does not work, copy and paste this link into your browser:<br>
-        <a href="{reset_url}" style="color: #0284c7;">{reset_url}</a>
+        <a href="{escaped_url}" style="color: #0284c7;">{escaped_url}</a>
       </div>
     </div>
     <div class="footer">
@@ -87,7 +111,7 @@ def build_password_reset_html(recipient_name: str, reset_url: str, expire_minute
 </html>"""
 
 def build_password_reset_text(recipient_name: str, reset_url: str, expire_minutes: int) -> str:
-    name_display = recipient_name if recipient_name else "Engineer"
+    name_display = recipient_name.replace("\r", "").replace("\n", "").strip() if recipient_name else "Engineer"
     return f"""Hello {name_display},
 
 We received a request to reset the password for your INDUSTRIA AI engineering account.
@@ -110,10 +134,16 @@ def send_password_reset_email(
 ) -> bool:
     """
     Sends a password reset email to the specified recipient.
-    If SMTP_HOST is not configured, saves to the local dev outbox for testing/dev environments.
+    Validates reset URL, sanitizes all inputs, safely executes SMTP transport,
+    and returns False on delivery failures without leaking sensitive credentials.
     """
-    # Construct reset URL using configured FRONTEND_URL
+    to_email_clean = _sanitize_header(to_email)
     reset_url = f"{settings.FRONTEND_URL}/?reset_token={reset_token}"
+
+    if not validate_reset_url(reset_url):
+        logger.error("Invalid reset URL constructed: scheme or host rejected.")
+        return False
+
     subject = "Reset your INDUSTRIA AI password"
     name_display = recipient_name or "Engineer"
 
@@ -130,11 +160,12 @@ def send_password_reset_email(
 
     # Check if real SMTP provider is configured
     if settings.SMTP_HOST:
+        server = None
         try:
             msg = MIMEMultipart("alternative")
-            msg["Subject"] = subject
-            msg["From"] = f"{settings.SMTP_FROM_NAME} <{settings.SMTP_FROM_EMAIL}>"
-            msg["To"] = to_email
+            msg["Subject"] = _sanitize_header(subject)
+            msg["From"] = f"{_sanitize_header(settings.SMTP_FROM_NAME)} <{_sanitize_header(settings.SMTP_FROM_EMAIL)}>"
+            msg["To"] = to_email_clean
 
             part1 = MIMEText(text_content, "plain")
             part2 = MIMEText(html_content, "html")
@@ -142,34 +173,44 @@ def send_password_reset_email(
             msg.attach(part2)
 
             if settings.SMTP_SSL:
-                server = smtplib.SMTP_SSL(settings.SMTP_HOST, settings.SMTP_PORT, timeout=10)
+                context = ssl.create_default_context()
+                server = smtplib.SMTP_SSL(settings.SMTP_HOST, settings.SMTP_PORT, timeout=10, context=context)
             else:
                 server = smtplib.SMTP(settings.SMTP_HOST, settings.SMTP_PORT, timeout=10)
                 if settings.SMTP_TLS:
-                    server.starttls()
+                    context = ssl.create_default_context()
+                    server.starttls(context=context)
 
             if settings.SMTP_USER and settings.SMTP_PASSWORD:
                 server.login(settings.SMTP_USER, settings.SMTP_PASSWORD)
 
-            server.sendmail(settings.SMTP_FROM_EMAIL, [to_email], msg.as_string())
-            server.quit()
-            logger.info("Password reset email sent via SMTP to: %s", to_email)
+            server.sendmail(settings.SMTP_FROM_EMAIL, [to_email_clean], msg.as_string())
+            logger.info("Password reset email sent via SMTP to: %s", _mask_email(to_email_clean))
             return True
         except Exception as e:
-            logger.error("Failed to send password reset email via SMTP: %s", str(e))
-            # In production, we don't leak SMTP errors to client to preserve enumeration resistance
+            logger.error("Failed to send password reset email via SMTP: %s", type(e).__name__)
             return False
+        finally:
+            if server:
+                try:
+                    server.quit()
+                except Exception:
+                    try:
+                        server.close()
+                    except Exception:
+                        pass
     else:
-        # Development / Local Testing Mode
+        # Development / Local Testing Mode: captured safely in development outbox
         record = {
-            "to_email": to_email,
+            "to_email": to_email_clean,
             "recipient_name": name_display,
             "subject": subject,
             "reset_token": reset_token,
             "reset_url": reset_url,
+            "html": html_content,
             "sent_at": datetime.utcnow().isoformat(),
         }
         _DEV_OUTBOX.append(record)
-        logger.info("Captured password reset email in local development outbox for: %s", to_email)
+        logger.info("Captured password reset email in local development outbox for: %s", _mask_email(to_email_clean))
         return True
 

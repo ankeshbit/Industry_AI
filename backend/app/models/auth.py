@@ -42,6 +42,7 @@ class User(Base):
     locked_until = Column(DateTime, nullable=True)
     email_verified_at = Column(DateTime, nullable=True)
     last_login_at = Column(DateTime, nullable=True)
+    token_version = Column(Integer, default=1, nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
 
     organisation = relationship("Organisation", back_populates="users")
@@ -95,5 +96,15 @@ class PasswordResetToken(Base):
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
 
     user = relationship("User", back_populates="password_reset_tokens")
+
+
+class RateLimitAttempt(Base):
+    __tablename__ = "rate_limit_attempts"
+
+    id = Column(String(36), primary_key=True, default=generate_uuid)
+    organisation_id = Column(String(36), nullable=True, index=True)
+    key = Column(String(255), nullable=False, index=True)
+    action = Column(String(50), nullable=False, index=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
 
 

@@ -9,16 +9,18 @@ from pydantic import BaseModel, Field
 from fastapi import APIRouter, Depends, status, HTTPException, Header
 from sqlalchemy.orm import Session
 
+from backend.app.config import settings
 from backend.app.database import get_db
 from backend.app.models.auth import User
+from backend.app.models.machine import Machine
 from backend.app.models.compatibility import CompatibilityCheck
 from backend.app.models.analysis import AnalysisResult
 from backend.app.models.dataset import Dataset, DatasetVersion
 from backend.app.models.model import ModelVersion
 from backend.app.models.compatibility import WarningAcknowledgement, LimitationAcknowledgement
-from backend.app.api.deps import get_current_user
+from backend.app.api.deps import get_current_user, require_analysis_write
 from backend.app.services.compatibility_service import verify_job_creation_gate
-from backend.app.services.queue_service import enqueue_job, execute_job_synchronous
+from backend.app.services.queue_service import enqueue_job, execute_job_synchronous, claim_job_by_id
 from backend.app.services.inference_service import execute_analysis
 
 router = APIRouter(tags=["Analyses"])
@@ -145,7 +147,7 @@ def _record_acknowledgements(db: Session, user: User, check: CompatibilityCheck)
 def request_analysis(
     req: CreateAnalysisRequest,
     idempotency_key: Optional[str] = Header(None, alias="Idempotency-Key"),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_analysis_write),
     db: Session = Depends(get_db)
 ):
     """
@@ -178,18 +180,25 @@ def request_analysis(
 
     # A forced re-run must create a new job: reusing the idempotent job would attempt to insert a
     # second AnalysisResult with the same (unique) job_id and fail.
+    effective_idempotency_key = None if req.force_rerun else idempotency_key
+
     job, is_new = enqueue_job(
         db=db,
         org_id=current_user.organisation_id,
         job_type="RUN_ANALYSIS",
         payload=payload,
-        idempotency_key=None if req.force_rerun else idempotency_key,
+        idempotency_key=effective_idempotency_key,
         user_id=current_user.id
     )
 
-    # For local/testing fast-path: execute immediately if new
-    if is_new:
-        job = execute_job_synchronous(db, job)
+    # Single execution ownership (PRD §8.5, Requirement A):
+    # Worker owns execution. If inline execution is retained for local development,
+    # it must use the same atomic job-claim mechanism so API and worker never race.
+    if settings.JOB_EXECUTION_MODE == "inline" and is_new:
+        inline_worker_id = f"api-inline-{current_user.id[:8]}"
+        claimed_job = claim_job_by_id(db, job.id, worker_id=inline_worker_id)
+        if claimed_job:
+            job = execute_job_synchronous(db, claimed_job, worker_id=inline_worker_id)
 
     # Fetch created result
     result = db.query(AnalysisResult).filter(
@@ -197,7 +206,7 @@ def request_analysis(
         AnalysisResult.organisation_id == current_user.organisation_id
     ).first()
 
-    if not result:
+    if not result and job.status == "SUCCEEDED":
         # Fallback if executed directly or queued
         result = db.query(AnalysisResult).filter(
             AnalysisResult.compatibility_check_id == check.id,
@@ -251,6 +260,13 @@ def get_machine_analyses(
     db: Session = Depends(get_db)
 ):
     """Returns historical prediction results for a machine."""
+    machine = db.query(Machine).filter(
+        Machine.id == id,
+        Machine.organisation_id == current_user.organisation_id
+    ).first()
+    if not machine:
+        raise HTTPException(status_code=404, detail="Machine not found.")
+
     results = db.query(AnalysisResult).filter(
         AnalysisResult.machine_id == id,
         AnalysisResult.organisation_id == current_user.organisation_id

@@ -106,26 +106,27 @@ AI4I_WITH_TYPE_DOC = {
     "model_versions": ["ai4i_failure_clf_typed@Production"]
 }
 
-# Reference-dataset evaluation figures, copied from docs/model_cards/*.md (historical 2,000-row test
-# partition, Stage 2B baseline). They previously held different, unsourced numbers and invented
-# confidence intervals, so /models contradicted the model cards. No CIs exist in the cards -> None.
-_TAU = "tau=0.45"
+# Reference-dataset evaluation figures from authoritative Stage 3 production models
+# (historical 2,000-row test partition, Platt scaling calibration, optimal tau=0.0100 at 50:1 cost ratio).
+_TAU = "tau=0.01"
 CARD_EVALUATIONS = {
     "NO_TYPE": [
-        {"metric_name": "PR-AUC", "metric_value": 0.7734, "subset": None},
-        {"metric_name": "ROC-AUC", "metric_value": 0.9763, "subset": None},
-        {"metric_name": "Brier", "metric_value": 0.0317, "subset": None},
-        {"metric_name": "Precision", "metric_value": 0.4082, "subset": _TAU},
-        {"metric_name": "Recall", "metric_value": 0.8824, "subset": _TAU},
-        {"metric_name": "F1", "metric_value": 0.5581, "subset": _TAU},
+        {"metric_name": "PR-AUC", "metric_value": 0.7382, "subset": None},
+        {"metric_name": "ROC-AUC", "metric_value": 0.9716, "subset": None},
+        {"metric_name": "Brier", "metric_value": 0.0150, "subset": None},
+        {"metric_name": "BSS", "metric_value": 0.5442, "subset": None},
+        {"metric_name": "Precision", "metric_value": 0.2347, "subset": _TAU},
+        {"metric_name": "Recall", "metric_value": 0.9559, "subset": _TAU},
+        {"metric_name": "F1", "metric_value": 0.3768, "subset": _TAU},
     ],
     "WITH_TYPE": [
-        {"metric_name": "PR-AUC", "metric_value": 0.7753, "subset": None},
-        {"metric_name": "ROC-AUC", "metric_value": 0.9730, "subset": None},
-        {"metric_name": "Brier", "metric_value": 0.0309, "subset": None},
-        {"metric_name": "Precision", "metric_value": 0.4041, "subset": _TAU},
-        {"metric_name": "Recall", "metric_value": 0.8676, "subset": _TAU},
-        {"metric_name": "F1", "metric_value": 0.5514, "subset": _TAU},
+        {"metric_name": "PR-AUC", "metric_value": 0.7617, "subset": None},
+        {"metric_name": "ROC-AUC", "metric_value": 0.9688, "subset": None},
+        {"metric_name": "Brier", "metric_value": 0.0148, "subset": None},
+        {"metric_name": "BSS", "metric_value": 0.5487, "subset": None},
+        {"metric_name": "Precision", "metric_value": 0.2159, "subset": _TAU},
+        {"metric_name": "Recall", "metric_value": 0.9559, "subset": _TAU},
+        {"metric_name": "F1", "metric_value": 0.3523, "subset": _TAU},
     ],
 }
 
@@ -237,13 +238,18 @@ def seed_database(db: Session) -> None:
             "version": "1.0.0",
             "pipeline": "A",
             "configuration": "NO_TYPE",
-            "algorithm": "XGBoost",
+            "algorithm": "XGBoost (Calibrated Platt Scaling)",
             "stage": "PRODUCTION",
             "profile_uuid": profile_notype.id,
             "training_domain": "REFERENCE_DATASET",
             "model_scope": "SHARED",
             "default_when_both_runnable": False,  # interim default is NO_TYPE per feasibility
-            "thresholds": {"optimal_tau": 0.45, "cost_ratio": 50.0},
+            "thresholds": {
+                "optimal_tau": 0.01,
+                "cost_ratio": 50.0,
+                "artifact_file": "production_m2_config_b.joblib",
+                "artifact_sha256": "ecc783fdd84a680a734b8ad4cb0945ca66041d86c3d5a75f680f1fd0e1a1e9df"
+            },
             "model_card_uri": "docs/model_cards/ai4i_failure_clf_notype.md",
             "evaluations": CARD_EVALUATIONS["NO_TYPE"],
         },
@@ -252,13 +258,18 @@ def seed_database(db: Session) -> None:
             "version": "1.0.0",
             "pipeline": "A",
             "configuration": "WITH_TYPE",
-            "algorithm": "XGBoost",
+            "algorithm": "XGBoost (Calibrated Platt Scaling)",
             "stage": "PRODUCTION",
             "profile_uuid": profile_typed.id,
             "training_domain": "REFERENCE_DATASET",
             "model_scope": "SHARED",
             "default_when_both_runnable": False,
-            "thresholds": {"optimal_tau": 0.45, "cost_ratio": 50.0},
+            "thresholds": {
+                "optimal_tau": 0.01,
+                "cost_ratio": 50.0,
+                "artifact_file": "production_m2_config_a.joblib",
+                "artifact_sha256": "ea1b170023571ab696fe4b969a053bb1a9d742e073144bba066d24585d738630"
+            },
             "model_card_uri": "docs/model_cards/ai4i_failure_clf_typed.md",
             "evaluations": CARD_EVALUATIONS["WITH_TYPE"],
         }
@@ -274,6 +285,10 @@ def seed_database(db: Session) -> None:
         if not model_obj:
             model_obj = ModelVersion(**m)
             db.add(model_obj)
+            db.flush()
+        else:
+            model_obj.algorithm = m["algorithm"]
+            model_obj.thresholds = m["thresholds"]
             db.flush()
         _sync_evaluations(db, model_obj, evals)
     db.commit()

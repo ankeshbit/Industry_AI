@@ -14,7 +14,7 @@ from backend.app.models.dataset import DatasetVersion
 from backend.app.models.compatibility import (
     CompatibilityCheck, PipelineProfile, WarningAcknowledgement, LimitationAcknowledgement
 )
-from backend.app.api.deps import get_current_user
+from backend.app.api.deps import get_current_user, require_analysis_write
 from backend.app.services.compatibility_service import evaluate_compatibility
 
 router = APIRouter(tags=["Compatibility Engine"])
@@ -70,7 +70,7 @@ def format_check_response(check: CompatibilityCheck) -> Dict[str, Any]:
 def run_checks_endpoint(
     vid: str,
     req: RunCompatibilityRequest,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_analysis_write),
     db: Session = Depends(get_db)
 ):
     """
@@ -118,6 +118,13 @@ def get_checks_endpoint(
     db: Session = Depends(get_db)
 ):
     """Lists compatibility checks for a dataset version."""
+    dv = db.query(DatasetVersion).filter(
+        DatasetVersion.id == vid,
+        DatasetVersion.organisation_id == current_user.organisation_id
+    ).first()
+    if not dv:
+        raise HTTPException(status_code=404, detail="Dataset version not found.")
+
     checks = db.query(CompatibilityCheck).filter(
         CompatibilityCheck.dataset_version_id == vid,
         CompatibilityCheck.organisation_id == current_user.organisation_id
@@ -144,7 +151,7 @@ def get_single_check(
 def acknowledge_warnings(
     id: str,
     req: AcknowledgeWarningsRequest,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_analysis_write),
     db: Session = Depends(get_db)
 ):
     """Acknowledges active warning codes for a compatibility check (AC-CE-4)."""
@@ -185,7 +192,7 @@ def acknowledge_warnings(
 @router.post("/limitations/acknowledge", status_code=status.HTTP_200_OK)
 def acknowledge_limitation(
     req: AcknowledgeLimitationRequest,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_analysis_write),
     db: Session = Depends(get_db)
 ):
     """Records explicit acknowledgement of reference-dataset model limitations (AC-AP-5, AC-ORG-2)."""

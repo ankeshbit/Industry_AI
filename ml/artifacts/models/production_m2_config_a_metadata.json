@@ -1,0 +1,67 @@
+{
+  "model_family": "M2",
+  "configuration": "WITH_TYPE",
+  "config_code": "A",
+  "model_version": "3.0.0",
+  "artifact_file": "production_m2_config_a.joblib",
+  "artifact_sha256": "ea1b170023571ab696fe4b969a053bb1a9d742e073144bba066d24585d738630",
+  "optimal_threshold": 0.01,
+  "prevalence_reference": 0.033928571428571426,
+  "feature_names": [
+    "Type",
+    "Air temperature [K]",
+    "Process temperature [K]",
+    "Rotational speed [rpm]",
+    "Torque [Nm]",
+    "Tool wear [min]"
+  ],
+  "winning_hyperparameters": {
+    "max_depth": 4,
+    "learning_rate": 0.1,
+    "subsample": 0.7,
+    "colsample_bytree": 1.0,
+    "min_child_weight": 1,
+    "tree_method": "hist"
+  },
+  "boosting_rounds": 74,
+  "aggregation_protocol": "Architecture v1.4.2 \u00a712.2 Modal Configuration + Ceiling Median Rounds across 25 Outer Folds",
+  "calibration_diagnostics": {
+    "model_family": "M2",
+    "calibration_method": "platt_sigmoid",
+    "cal_samples": 1200,
+    "cal_positives": 41,
+    "passes_gate": true,
+    "w": 0.9501632087681089,
+    "c": -2.2491841081076442,
+    "se_w": 0.10603266898845047,
+    "se_c": 0.2376908119027108,
+    "relative_se_w": 0.11159416404464063,
+    "warnings": []
+  },
+  "historical_test_benchmark": {
+    "average_precision": 0.76165,
+    "roc_auc": 0.96881,
+    "brier_score": 0.014822,
+    "brier_skill_score": 0.5487,
+    "operational_cost": 77200.0,
+    "confusion_matrix": {
+      "true_positives": 65,
+      "false_positives": 236,
+      "false_negatives": 3,
+      "true_negatives": 1696,
+      "precision": 0.2159,
+      "recall": 0.9559,
+      "f1_score": 0.3523
+    }
+  },
+  "governance": {
+    "training_domain": "REFERENCE_DATASET",
+    "dataset_checksum": "dc6630cd9b1f0f853922fad78a1b6436570d3f1ec863f1dd5c4340ac56bc8a8e",
+    "architecture_version": "v1.4.2",
+    "prd_version": "v1.2",
+    "non_causality_disclaimer": "Feature attributions describe model behaviour, not physical causation.",
+    "operational_cost_disclaimer": "The 50:1 cost ratio ($10,000 / $200) is an illustrative PRD benchmark (Appendix E) and does not represent verified customer plant economics.",
+    "reliability_disclaimer": "Model trained on synthetic reference data (AI4I 2020); predictions are advisory risk scores, not physical failure frequencies."
+  },
+  "created_at": "2026-11-25 10:27:57Z"
+}

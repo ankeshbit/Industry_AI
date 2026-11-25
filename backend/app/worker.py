@@ -34,7 +34,7 @@ def run_worker_loop(worker_id: str = None, poll_interval: float = 1.0, max_itera
             job = claim_next_job(db, worker_id)
             if job:
                 logger.info(f"Claimed job {job.id} (type: {job.job_type}, org: {job.organisation_id})")
-                execute_job_synchronous(db, job)
+                execute_job_synchronous(db, job, worker_id=worker_id)
                 logger.info(f"Finished job {job.id} with status: {job.status}")
             else:
                 time.sleep(poll_interval)

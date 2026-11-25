@@ -93,12 +93,15 @@ export const ResetPasswordModal: React.FC<ResetPasswordProps> = ({
     try {
       await api.auth.resetPassword(token, newPassword);
       setResetCompleted(true);
-      // Clean query parameter from browser address bar
+      // Clean recovery parameters and hash from browser address bar
       try {
         const url = new URL(window.location.href);
         url.searchParams.delete('reset_token');
         url.searchParams.delete('token');
-        window.history.replaceState({}, '', url.pathname + url.search);
+        url.searchParams.delete('code');
+        url.searchParams.delete('type');
+        url.hash = '';
+        window.history.replaceState({}, '', url.pathname + (url.search ? url.search : ''));
       } catch {
         // ignore
       }

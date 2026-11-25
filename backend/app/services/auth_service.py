@@ -18,7 +18,9 @@ from fastapi import HTTPException, status, Depends
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 
 from backend.app.config import settings
-from backend.app.models.auth import Organisation, User, RefreshToken, Plant, PasswordResetToken
+from backend.app.models.auth import (
+    Organisation, User, RefreshToken, Plant, PasswordResetToken, RateLimitAttempt
+)
 from backend.app.services.email_service import send_password_reset_email
 
 ph = PasswordHasher()
@@ -52,14 +54,15 @@ def validate_password_strength(password: str) -> None:
             detail={"error": {"code": "COMMON_PASSWORD", "message": "Password is too common or easily guessable."}}
         )
 
-def create_access_token(user_id: str, org_id: str, role: str) -> Tuple[str, int]:
-    """Creates a short-lived access JWT containing sub, org_id, and role claims."""
+def create_access_token(user_id: str, org_id: str, role: str, token_version: int = 1) -> Tuple[str, int]:
+    """Creates a short-lived access JWT containing sub, org_id, role, and token_version claims."""
     expires_delta = timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
     expire = datetime.utcnow() + expires_delta
     payload = {
         "sub": user_id,
         "org_id": org_id,
         "role": role,
+        "token_version": token_version,
         "exp": expire,
         "iat": datetime.utcnow()
     }
@@ -171,6 +174,12 @@ def login_user(db: Session, email: str, password: str) -> dict:
             detail={"error": {"code": "UNAUTHENTICATED", "message": "Invalid email or password."}}
         )
 
+    if not user.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail={"error": {"code": "ACCOUNT_DEACTIVATED", "message": "User account is deactivated."}}
+        )
+
     # Check lockout
     now = datetime.utcnow()
     if user.locked_until and user.locked_until > now:
@@ -202,7 +211,9 @@ def login_user(db: Session, email: str, password: str) -> dict:
     user.last_login_at = now
     db.commit()
 
-    access_token, expires_in = create_access_token(user.id, user.organisation_id, user.role)
+    access_token, expires_in = create_access_token(
+        user.id, user.organisation_id, user.role, token_version=user.token_version or 1
+    )
     refresh_token = create_refresh_token(db, user)
 
     return {
@@ -277,7 +288,9 @@ def rotate_refresh_token(db: Session, token_string: str) -> dict:
 
     # Issue new token in same family
     new_token_str = create_refresh_token(db, user, family_id=rf.family_id)
-    access_token, expires_in = create_access_token(user.id, user.organisation_id, user.role)
+    access_token, expires_in = create_access_token(
+        user.id, user.organisation_id, user.role, token_version=user.token_version or 1
+    )
 
     return {
         "access_token": access_token,
@@ -287,71 +300,127 @@ def rotate_refresh_token(db: Session, token_string: str) -> dict:
     }
 
 # ---------------------------------------------------------------------------
-# Password Reset Service Functions
+# Rate Limiting & Password Reset Service Functions
 # ---------------------------------------------------------------------------
 
-_RESET_IP_ATTEMPTS: Dict[str, List[float]] = {}
-_RESET_EMAIL_ATTEMPTS: Dict[str, List[float]] = {}
+_FALLBACK_IP_ATTEMPTS: Dict[str, List[float]] = {}
+_FALLBACK_EMAIL_ATTEMPTS: Dict[str, List[float]] = {}
 
-def check_reset_rate_limit(ip_address: Optional[str], email: str) -> bool:
-    """Checks rate limiting: max 5 requests per IP address per 15 minutes."""
-    now = time.time()
-    window = 15 * 60  # 15 minutes
-    
-    if ip_address:
-        attempts = [t for t in _RESET_IP_ATTEMPTS.get(ip_address, []) if now - t < window]
-        if len(attempts) >= 5:
-            return False
-        attempts.append(now)
-        _RESET_IP_ATTEMPTS[ip_address] = attempts
-        
+def check_and_record_rate_limit(
+    db: Optional[Session],
+    key: str,
+    action: str,
+    max_requests: int,
+    window_seconds: int
+) -> bool:
+    """
+    Persistent, distributed rate limiter backed by the database.
+    Counts attempts within the sliding window; records the attempt if allowed.
+    Falls back gracefully to in-memory sliding window if db is not provided.
+    """
+    now = datetime.utcnow()
+    cutoff = now - timedelta(seconds=window_seconds)
+
+    if db is not None:
+        try:
+            count = db.query(RateLimitAttempt).filter(
+                RateLimitAttempt.key == key,
+                RateLimitAttempt.action == action,
+                RateLimitAttempt.created_at >= cutoff
+            ).count()
+
+            if count >= max_requests:
+                return False
+
+            attempt = RateLimitAttempt(key=key, action=action, created_at=now)
+            db.add(attempt)
+            db.commit()
+            return True
+        except Exception as e:
+            # If database error occurs, fall back to in-memory tracking
+            db.rollback()
+
+    # In-memory fallback
+    now_ts = time.time()
+    store = _FALLBACK_IP_ATTEMPTS if action.endswith("IP") else _FALLBACK_EMAIL_ATTEMPTS
+    attempts = [t for t in store.get(key, []) if now_ts - t < window_seconds]
+    if len(attempts) >= max_requests:
+        return False
+    attempts.append(now_ts)
+    store[key] = attempts
     return True
 
-def is_email_throttled(email: str) -> bool:
-    """Checks email send throttle: max 3 emails sent per email address per 15 minutes."""
-    now = time.time()
-    window = 15 * 60
-    attempts = [t for t in _RESET_EMAIL_ATTEMPTS.get(email.lower(), []) if now - t < window]
-    if len(attempts) >= 3:
-        return True
-    attempts.append(now)
-    _RESET_EMAIL_ATTEMPTS[email.lower()] = attempts
-    return False
-
-def clear_reset_rate_limits():
-    """Testing helper to clear rate limit states."""
-    _RESET_IP_ATTEMPTS.clear()
-    _RESET_EMAIL_ATTEMPTS.clear()
+def clear_reset_rate_limits(db: Optional[Session] = None):
+    """Testing helper to clear rate limit states in database and in-memory fallback."""
+    _FALLBACK_IP_ATTEMPTS.clear()
+    _FALLBACK_EMAIL_ATTEMPTS.clear()
+    if db is not None:
+        try:
+            db.query(RateLimitAttempt).delete()
+            db.commit()
+        except Exception:
+            db.rollback()
 
 def request_password_reset(db: Session, email: str, ip_address: Optional[str] = None) -> dict:
     """
     Handles forgot password request:
-    - Applies IP rate limiting (429 if exceeded).
-    - Generates a single-use cryptographically secure reset token.
-    - Stores only the SHA-256 hash with 20 minute expiry.
-    - Sends the reset email through the email service.
-    - Returns a generic message to prevent email enumeration.
+    - Normalizes client IP and applies persistent IP rate limiting (429 if exceeded).
+    - Normalizes email and throttles repeat dispatches to prevent inbox flooding.
+    - Preserves enumeration resistance: returns generic response regardless of whether email exists.
+    - Generates single-use cryptographically secure token with 20 minute expiry.
+    - Safely delivers email before invalidating user's previous valid token.
+    - Never logs raw reset tokens or passwords.
     """
-    if ip_address and not check_reset_rate_limit(ip_address, email):
-        raise HTTPException(
-            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-            detail={"error": {"code": "RATE_LIMIT_EXCEEDED", "message": "Too many password reset requests. Please try again later."}}
+    if ip_address:
+        ip_clean = ip_address.strip()
+        ip_allowed = check_and_record_rate_limit(
+            db=db,
+            key=f"ip:{ip_clean}",
+            action="PASSWORD_RESET_IP",
+            max_requests=settings.RATE_LIMIT_RESET_IP_MAX,
+            window_seconds=settings.RATE_LIMIT_RESET_IP_WINDOW_SECONDS
         )
+        if not ip_allowed:
+            raise HTTPException(
+                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                detail={"error": {"code": "RATE_LIMIT_EXCEEDED", "message": "Too many password reset requests from this IP. Please try again later."}}
+            )
 
     normalized_email = email.strip().lower()
+    email_allowed = check_and_record_rate_limit(
+        db=db,
+        key=f"email:{normalized_email}",
+        action="PASSWORD_RESET_EMAIL",
+        max_requests=settings.RATE_LIMIT_RESET_EMAIL_MAX,
+        window_seconds=settings.RATE_LIMIT_RESET_EMAIL_WINDOW_SECONDS
+    )
+    if not email_allowed:
+        # Silently throttle email send to prevent user inbox flooding and enumeration probing
+        return {
+            "message": "If that email address is registered, a password reset link has been sent.",
+            "status": "SENT"
+        }
+
     user = db.query(User).filter(User.email == normalized_email).first()
 
     if user and user.is_active:
-        if not is_email_throttled(normalized_email):
-            # Invalidate previously active unconsumed tokens for this user
+        raw_token = secrets.token_urlsafe(32)
+        token_hash = hashlib.sha256(raw_token.encode("utf-8")).hexdigest()
+        expires_at = datetime.utcnow() + timedelta(minutes=settings.PASSWORD_RESET_TOKEN_EXPIRE_MINUTES)
+
+        # Attempt safe email delivery first
+        delivery_success = send_password_reset_email(
+            to_email=user.email,
+            reset_token=raw_token,
+            recipient_name=user.full_name
+        )
+
+        if delivery_success:
+            # Only invalidate previous tokens and store the new token if delivery succeeded
             db.query(PasswordResetToken).filter(
                 PasswordResetToken.user_id == user.id,
                 PasswordResetToken.is_consumed == False
-            ).update({"is_consumed": True})
-
-            raw_token = secrets.token_urlsafe(32)
-            token_hash = hashlib.sha256(raw_token.encode("utf-8")).hexdigest()
-            expires_at = datetime.utcnow() + timedelta(minutes=settings.PASSWORD_RESET_TOKEN_EXPIRE_MINUTES)
+            ).update({"is_consumed": True, "consumed_at": datetime.utcnow()}, synchronize_session=False)
 
             reset_record = PasswordResetToken(
                 organisation_id=user.organisation_id,
@@ -363,14 +432,11 @@ def request_password_reset(db: Session, email: str, ip_address: Optional[str] = 
             )
             db.add(reset_record)
             db.commit()
-
-            send_password_reset_email(
-                to_email=user.email,
-                reset_token=raw_token,
-                recipient_name=user.full_name
-            )
+        else:
+            # SMTP failure: roll back so user's previous valid link remains functional
+            db.rollback()
     else:
-        # User not found or inactive: execute dummy hash for timing equalisation
+        # Timing equalisation dummy hash
         _ = hash_password("industria-timing-equalisation-dummy")
 
     return {
@@ -404,12 +470,23 @@ def verify_reset_token(db: Session, token: str) -> dict:
             detail={"error": {"code": "EXPIRED_TOKEN", "message": "This password reset link has expired. Please request a new one."}}
         )
 
+    user = db.query(User).filter(User.id == record.user_id).first()
+    if not user or not user.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={"error": {"code": "INVALID_OR_CONSUMED_TOKEN", "message": "This password reset token is invalid or has already been used."}}
+        )
+
     return {"valid": True, "message": "Reset token is valid."}
 
 def reset_user_password(db: Session, token: str, new_password: str) -> dict:
     """
     Consumes a reset token and updates the user's password using Argon2id.
-    Invalidates all existing tokens and sessions.
+    - Consumption is atomic (conditional compare-and-set preventing double-consumption).
+    - Verifies token expiry inside the same atomic transaction.
+    - Applies uniform 12+ char password policy.
+    - Invalidates all existing sessions (increments token_version and revokes all refresh tokens).
+    - Failed resets do not modify the user's password.
     """
     validate_password_strength(new_password)
 
@@ -420,51 +497,73 @@ def reset_user_password(db: Session, token: str, new_password: str) -> dict:
         )
 
     token_hash = hashlib.sha256(token.strip().encode("utf-8")).hexdigest()
-    record = db.query(PasswordResetToken).filter(PasswordResetToken.token_hash == token_hash).first()
+    now = datetime.utcnow()
 
-    if not record or record.is_consumed:
+    # 1. Atomic compare-and-set: ONLY updates if token exists, is unconsumed, AND has not expired
+    updated_count = db.query(PasswordResetToken).filter(
+        PasswordResetToken.token_hash == token_hash,
+        PasswordResetToken.is_consumed == False,
+        PasswordResetToken.expires_at >= now
+    ).update(
+        {
+            "is_consumed": True,
+            "consumed_at": now
+        },
+        synchronize_session=False
+    )
+
+    if updated_count != 1:
+        # Determine specific reason for descriptive client error
+        record = db.query(PasswordResetToken).filter(PasswordResetToken.token_hash == token_hash).first()
+        if not record or record.is_consumed:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail={"error": {"code": "INVALID_OR_CONSUMED_TOKEN", "message": "This password reset token is invalid or has already been used."}}
+            )
+        if record.expires_at < now:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail={"error": {"code": "EXPIRED_TOKEN", "message": "This password reset link has expired. Please request a new one."}}
+            )
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail={"error": {"code": "INVALID_OR_CONSUMED_TOKEN", "message": "This password reset token is invalid or has already been used."}}
         )
 
-    if record.expires_at < datetime.utcnow():
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail={"error": {"code": "EXPIRED_TOKEN", "message": "This password reset link has expired. Please request a new one."}}
-        )
-
-    user = db.query(User).filter(User.id == record.user_id).first()
+    # 2. Look up user
+    token_record = db.query(PasswordResetToken).filter(PasswordResetToken.token_hash == token_hash).first()
+    user = db.query(User).filter(User.id == token_record.user_id).first()
     if not user or not user.is_active:
+        db.rollback()
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail={"error": {"code": "INVALID_USER", "message": "User account not found or deactivated."}}
         )
 
-    # Atomic updates
+    # 3. Update password hash with Argon2id
     user.password_hash = hash_password(new_password)
     user.failed_login_count = 0
     user.locked_until = None
 
-    record.is_consumed = True
-    record.consumed_at = datetime.utcnow()
+    # 4. Session invalidation: Increment token_version to invalidate all existing access tokens
+    user.token_version = (user.token_version or 1) + 1
 
-    # Invalidate other unconsumed reset tokens
+    # 5. Invalidate all other unconsumed reset tokens for this user
     db.query(PasswordResetToken).filter(
         PasswordResetToken.user_id == user.id,
         PasswordResetToken.is_consumed == False
-    ).update({"is_consumed": True})
+    ).update({"is_consumed": True, "consumed_at": now}, synchronize_session=False)
 
-    # Invalidate active refresh tokens
+    # 6. Revoke all active refresh tokens for this user
     db.query(RefreshToken).filter(
         RefreshToken.user_id == user.id,
         RefreshToken.revoked_at.is_(None)
-    ).update({"revoked_at": datetime.utcnow()})
+    ).update({"revoked_at": now}, synchronize_session=False)
 
     db.commit()
 
     return {
-        "message": "Password has been reset successfully. You may now sign in with your new password.",
+        "message": "Password has been reset successfully. All existing active sessions have been invalidated for security. You may now sign in with your new password.",
         "status": "SUCCESS"
     }
 

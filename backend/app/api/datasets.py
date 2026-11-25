@@ -10,8 +10,9 @@ from sqlalchemy.orm import Session
 from backend.app.config import settings
 from backend.app.database import get_db
 from backend.app.models.auth import User
+from backend.app.models.machine import Machine
 from backend.app.models.dataset import Dataset, DatasetVersion, ColumnMapping, ValidationReport
-from backend.app.api.deps import get_current_user
+from backend.app.api.deps import get_current_user, require_dataset_write
 from backend.app.services.dataset_service import (
     create_dataset, upload_dataset_version_stream, compute_quality_score_and_report,
     generate_column_suggestions, save_column_mapping
@@ -33,7 +34,7 @@ class SaveMappingRequest(BaseModel):
 def create_dataset_endpoint(
     id: str,
     req: CreateDatasetRequest,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_dataset_write),
     db: Session = Depends(get_db)
 ):
     """Registers a dataset collection attached to a machine (AC-MM-2, AC-DS-1)."""
@@ -63,6 +64,14 @@ def get_machine_datasets(
     db: Session = Depends(get_db)
 ):
     """Lists all datasets belonging to a machine."""
+    # Verify machine ownership to prevent cross-tenant enumeration
+    machine = db.query(Machine).filter(
+        Machine.id == id,
+        Machine.organisation_id == current_user.organisation_id
+    ).first()
+    if not machine:
+        raise HTTPException(status_code=404, detail="Machine not found.")
+
     datasets = db.query(Dataset).filter(
         Dataset.machine_id == id,
         Dataset.organisation_id == current_user.organisation_id
@@ -116,7 +125,7 @@ def get_dataset_details(
 async def upload_dataset_file(
     id: str,
     file: UploadFile = File(...),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_dataset_write),
     db: Session = Depends(get_db)
 ):
     """
@@ -231,7 +240,7 @@ def put_mapping(
     vid: str,
     profile_id: str,
     req: SaveMappingRequest,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_dataset_write),
     db: Session = Depends(get_db)
 ):
     """
@@ -285,4 +294,52 @@ def get_validation_reports(
         "checks": report.checks,
         "created_at": report.created_at.isoformat()
     }
+
+@router.delete("/datasets/{id}", status_code=status.HTTP_200_OK)
+def delete_dataset_endpoint(
+    id: str,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Deletes a dataset according to PRD v1.2 §5.1 / AC-ORG-8:
+    - ORG_ADMIN: Can delete any dataset in their organisation.
+    - ENGINEER: Can delete only datasets they created (created_by == current_user.id).
+    - ANALYST: Can delete only datasets they created (created_by == current_user.id).
+    - VIEWER: Forbidden (403).
+    - Cross-tenant: Returns 404 NOT_FOUND.
+    """
+    if current_user.role == "VIEWER":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={"error": {"code": "FORBIDDEN", "message": "Viewers are not permitted to delete datasets."}}
+        )
+
+    dataset = db.query(Dataset).filter(
+        Dataset.id == id,
+        Dataset.organisation_id == current_user.organisation_id
+    ).first()
+    if not dataset:
+        raise HTTPException(status_code=404, detail="Dataset not found.")
+
+    if current_user.role in ("ENGINEER", "ANALYST") and dataset.created_by != current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={"error": {"code": "FORBIDDEN", "message": f"Users with role '{current_user.role}' may only delete datasets they created."}}
+        )
+
+    # Cascade clean up dependent records referencing versions of this dataset
+    from backend.app.models.compatibility import CompatibilityCheck, WarningAcknowledgement
+    from backend.app.models.analysis import AnalysisResult
+
+    for v in dataset.versions:
+        db.query(AnalysisResult).filter(AnalysisResult.dataset_version_id == v.id).delete(synchronize_session=False)
+        check_ids = [c[0] for c in db.query(CompatibilityCheck.id).filter(CompatibilityCheck.dataset_version_id == v.id).all()]
+        if check_ids:
+            db.query(WarningAcknowledgement).filter(WarningAcknowledgement.compatibility_check_id.in_(check_ids)).delete(synchronize_session=False)
+        db.query(CompatibilityCheck).filter(CompatibilityCheck.dataset_version_id == v.id).delete(synchronize_session=False)
+
+    db.delete(dataset)
+    db.commit()
+    return {"message": "Dataset deleted successfully.", "id": id}
 

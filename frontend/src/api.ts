@@ -2,7 +2,7 @@
  * API Client for INDUSTRIA AI Backend
  */
 
-import { supabase, isSupabaseConfigured } from './lib/supabase';
+import { supabase, isSupabaseConfigured, initSupabaseClient } from './utils/supabase/client';
 
 // .env.example documents VITE_API_BASE_URL, but it was never read; default keeps the dev proxy / nginx setup working
 const BASE_URL: string = (import.meta.env.VITE_API_BASE_URL as string | undefined) || '/api/v1';
@@ -173,16 +173,76 @@ function getAuthHeader(): Record<string, string> {
   return token ? { Authorization: `Bearer ${token}` } : {};
 }
 
-// Access tokens live 15 minutes (backend ACCESS_TOKEN_EXPIRE_MINUTES). Previously the stored refresh
-// token was never used, so users were silently broken after 15 minutes. Share one in-flight refresh.
+// Authentication Provider Coordination
+let activeAuthProvider: 'supabase' | 'local' | null = null;
+let authConfigInFlight: Promise<AuthModeConfig> | null = null;
+
+export async function getEffectiveAuthProvider(): Promise<'supabase' | 'local'> {
+  if (activeAuthProvider !== null) {
+    return activeAuthProvider;
+  }
+  if (!authConfigInFlight) {
+    authConfigInFlight = (async () => {
+      try {
+        const res = await fetch(`${BASE_URL}/auth/config`);
+        if (res.ok) {
+          const cfg: AuthModeConfig = await res.json();
+          if (cfg.auth_provider === 'supabase') {
+            if (!isSupabaseConfigured() && cfg.supabase_url && cfg.supabase_anon_key) {
+              initSupabaseClient(cfg.supabase_url, cfg.supabase_anon_key);
+            }
+            if (isSupabaseConfigured()) {
+              activeAuthProvider = 'supabase';
+            } else {
+              console.warn(
+                'INDUSTRIA AI Auth: Backend requested Supabase auth, but valid Supabase client credentials were not found. Falling back to local auth.'
+              );
+              activeAuthProvider = 'local';
+            }
+          } else {
+            activeAuthProvider = 'local';
+          }
+          return cfg;
+        }
+      } catch (e) {
+        console.warn('Could not reach backend /auth/config, falling back to local/env auth detection:', e);
+      }
+      activeAuthProvider = isSupabaseConfigured() ? 'supabase' : 'local';
+      return {
+        auth_provider: activeAuthProvider,
+        multi_org_enabled: false,
+      };
+    })().finally(() => {
+      authConfigInFlight = null;
+    });
+  }
+  await authConfigInFlight;
+  return activeAuthProvider || (isSupabaseConfigured() ? 'supabase' : 'local');
+}
+
+// Access tokens live 15 minutes (backend ACCESS_TOKEN_EXPIRE_MINUTES). Share one in-flight refresh.
 let refreshInFlight: Promise<boolean> | null = null;
 
 async function refreshAccessToken(): Promise<boolean> {
-  const refreshToken = localStorage.getItem('refresh_token');
-  if (!refreshToken) return false;
   if (!refreshInFlight) {
     refreshInFlight = (async () => {
       try {
+        const provider = await getEffectiveAuthProvider();
+        if (provider === 'supabase' && supabase) {
+          const { data, error } = await supabase.auth.refreshSession();
+          if (error || !data.session) {
+            localStorage.removeItem('access_token');
+            localStorage.removeItem('refresh_token');
+            return false;
+          }
+          localStorage.setItem('access_token', data.session.access_token);
+          localStorage.setItem('refresh_token', data.session.refresh_token);
+          return true;
+        }
+
+        const refreshToken = localStorage.getItem('refresh_token');
+        if (!refreshToken) return false;
+
         const res = await fetch(`${BASE_URL}/auth/refresh`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -238,9 +298,22 @@ export async function request<T>(endpoint: string, options: RequestInit = {}): P
 // Authentication API
 export const api = {
   auth: {
-    getConfig: () => request<AuthModeConfig>('/auth/config'),
+    getConfig: async () => {
+      const cfg = await request<AuthModeConfig>('/auth/config');
+      if (cfg.auth_provider === 'supabase') {
+        if (!isSupabaseConfigured() && cfg.supabase_url && cfg.supabase_anon_key) {
+          initSupabaseClient(cfg.supabase_url, cfg.supabase_anon_key);
+        }
+        activeAuthProvider = isSupabaseConfigured() ? 'supabase' : 'local';
+      } else {
+        activeAuthProvider = 'local';
+      }
+      return cfg;
+    },
+    getProvider: () => activeAuthProvider || (isSupabaseConfigured() ? 'supabase' : 'local'),
     register: async (data: { organisation_name: string; email: string; full_name: string; password: string }): Promise<{ message?: string; user?: any }> => {
-      if (isSupabaseConfigured() && supabase) {
+      const provider = await getEffectiveAuthProvider();
+      if (provider === 'supabase' && supabase) {
         const { data: sbData, error: sbError } = await supabase.auth.signUp({
           email: data.email,
           password: data.password,
@@ -268,7 +341,8 @@ export const api = {
       return request<{ message?: string; user?: any }>('/auth/register', { method: 'POST', body: JSON.stringify(data) });
     },
     login: async (credentials: { email: string; password: string }) => {
-      if (isSupabaseConfigured() && supabase) {
+      const provider = await getEffectiveAuthProvider();
+      if (provider === 'supabase' && supabase) {
         const { data: sbData, error: sbError } = await supabase.auth.signInWithPassword({
           email: credentials.email,
           password: credentials.password,
@@ -291,11 +365,12 @@ export const api = {
     },
     getMe: () => request<User>('/users/me'),
     logout: async () => {
-      if (isSupabaseConfigured() && supabase) {
+      const provider = await getEffectiveAuthProvider();
+      if (provider === 'supabase' && supabase) {
         await supabase.auth.signOut().catch(() => undefined);
       }
       const refreshToken = localStorage.getItem('refresh_token');
-      if (refreshToken) {
+      if (refreshToken && provider === 'local') {
         fetch(`${BASE_URL}/auth/logout`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -306,12 +381,41 @@ export const api = {
       localStorage.removeItem('refresh_token');
     },
     forgotPassword: async (email: string) => {
-      if (isSupabaseConfigured() && supabase) {
+      const provider = await getEffectiveAuthProvider();
+      if (provider === 'supabase' && supabase) {
+        const redirectTo = `${window.location.origin}/?reset_token=supabase`;
         const { error } = await supabase.auth.resetPasswordForEmail(email, {
-          redirectTo: `${window.location.origin}/?reset_token=supabase`,
+          redirectTo,
         });
         if (error) {
-          console.warn('Supabase password reset note:', error.message);
+          // If rate limit error, propagate with standard code
+          const isRateLimit =
+            error.status === 429 ||
+            error.message.toLowerCase().includes('rate limit') ||
+            error.message.toLowerCase().includes('too many requests') ||
+            error.message.toLowerCase().includes('over_email_send_rate_limit');
+          if (isRateLimit) {
+            throw {
+              code: 'RATE_LIMIT_EXCEEDED',
+              message: 'Too many password reset requests. Please wait a few minutes before trying again.',
+            };
+          }
+          // Preserve email enumeration protection: do not reveal whether an unregistered account exists
+          const isUserNotFound =
+            error.message.toLowerCase().includes('user not found') ||
+            error.message.toLowerCase().includes('invalid user') ||
+            error.message.toLowerCase().includes('not registered');
+          if (isUserNotFound) {
+            return {
+              message: 'If that email address is registered, a password reset link has been sent.',
+              status: 'SENT',
+            };
+          }
+          // For any other unexpected errors (e.g. invalid email format, network error, misconfigured project)
+          // do NOT silently swallow: throw so the UI / user is aware of the failure
+          throw {
+            message: error.message || 'Unable to request password reset via Supabase.',
+          };
         }
         return {
           message: 'If that email address is registered, a password reset link has been sent.',
@@ -326,7 +430,8 @@ export const api = {
     verifyResetToken: (token: string) =>
       request<{ valid: boolean; message?: string }>(`/auth/verify-reset-token?token=${encodeURIComponent(token)}`),
     resetPassword: async (token: string, newPassword: string) => {
-      if (isSupabaseConfigured() && supabase && token === 'supabase') {
+      const provider = await getEffectiveAuthProvider();
+      if (provider === 'supabase' && supabase && token === 'supabase') {
         const { error } = await supabase.auth.updateUser({ password: newPassword });
         if (error) {
           throw { message: error.message };

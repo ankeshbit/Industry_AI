@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { api, User, CompatibilityCheck, AnalysisResult, Machine } from './api';
+import { supabase, isSupabaseConfigured } from './utils/supabase/client';
 import { AuthModal } from './components/AuthModal';
 import { Sidebar, NavSection } from './components/Sidebar';
 import { Header } from './components/Header';
@@ -22,7 +23,16 @@ export function App() {
   const [resetToken, setResetToken] = useState<string | null>(() => {
     if (typeof window !== 'undefined') {
       const params = new URLSearchParams(window.location.search);
-      return params.get('reset_token') || params.get('token');
+      const searchToken = params.get('reset_token') || params.get('token');
+      if (searchToken) return searchToken;
+      // Also detect Supabase recovery in hash fragments or query
+      if (
+        window.location.hash.includes('type=recovery') ||
+        params.get('type') === 'recovery' ||
+        (window.location.hash.includes('access_token=') && window.location.hash.includes('recovery'))
+      ) {
+        return 'supabase';
+      }
     }
     return null;
   });
@@ -45,20 +55,70 @@ export function App() {
   const [loadingMachines, setLoadingMachines] = useState(false);
 
   useEffect(() => {
+    let subscription: { unsubscribe: () => void } | null = null;
+
+    if (isSupabaseConfigured() && supabase) {
+      const { data } = supabase.auth.onAuthStateChange(async (event, session) => {
+        if (event === 'PASSWORD_RECOVERY') {
+          setResetToken('supabase');
+        } else if (event === 'SIGNED_IN' && session) {
+          localStorage.setItem('access_token', session.access_token);
+          localStorage.setItem('refresh_token', session.refresh_token);
+          try {
+            const user = await api.auth.getMe();
+            setCurrentUser(user);
+          } catch {
+            // caught during session validation
+          }
+        } else if (event === 'TOKEN_REFRESHED' && session) {
+          localStorage.setItem('access_token', session.access_token);
+          localStorage.setItem('refresh_token', session.refresh_token);
+        } else if (event === 'SIGNED_OUT') {
+          localStorage.removeItem('access_token');
+          localStorage.removeItem('refresh_token');
+          setCurrentUser(null);
+        }
+      });
+      subscription = data.subscription;
+    }
+
     async function checkAuth() {
+      // Synchronize provider configuration with backend
+      await api.auth.getConfig().catch(() => undefined);
+
+      // Check for existing Supabase session if configured
+      if (isSupabaseConfigured() && supabase) {
+        try {
+          const { data: { session } } = await supabase.auth.getSession();
+          if (session) {
+            localStorage.setItem('access_token', session.access_token);
+            localStorage.setItem('refresh_token', session.refresh_token);
+          }
+        } catch {
+          // ignore
+        }
+      }
+
       const token = localStorage.getItem('access_token');
       if (token) {
         try {
           const user = await api.auth.getMe();
           setCurrentUser(user);
-        } catch (e) {
+        } catch (e: any) {
           localStorage.removeItem('access_token');
           localStorage.removeItem('refresh_token');
+          if (e?.code === 'TOKEN_REVOKED') {
+            sessionStorage.setItem('session_invalidated_notice', 'Your session has been invalidated for security. Please sign in again.');
+          }
         }
       }
       setAuthChecked(true);
     }
     checkAuth();
+
+    return () => {
+      subscription?.unsubscribe();
+    };
   }, []);
 
   const handleLogout = () => {
@@ -104,6 +164,9 @@ export function App() {
       const url = new URL(window.location.href);
       url.searchParams.delete('reset_token');
       url.searchParams.delete('token');
+      url.searchParams.delete('code');
+      url.searchParams.delete('type');
+      url.hash = '';
       window.history.replaceState({}, document.title, url.pathname + (url.search ? url.search : ''));
     }
     setResetToken(null);

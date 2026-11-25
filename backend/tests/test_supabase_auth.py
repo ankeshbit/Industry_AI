@@ -45,6 +45,18 @@ def test_auth_config_endpoint(mock_supabase_env):
     assert data["supabase_url"] == mock_supabase_env["url"]
     assert data["supabase_anon_key"] == mock_supabase_env["anon_key"]
 
+def test_auth_config_endpoint_local_when_disabled(monkeypatch):
+    """Verifies that /auth/config reports 'local' when Supabase is disabled."""
+    monkeypatch.setattr(settings, "SUPABASE_URL", "")
+    monkeypatch.setattr(settings, "SUPABASE_JWT_SECRET", "")
+    monkeypatch.setattr(settings, "SUPABASE_ANON_KEY", "")
+    res = client.get("/api/v1/auth/config")
+    assert res.status_code == 200
+    data = res.json()
+    assert data["auth_provider"] == "local"
+    assert data["supabase_url"] is None
+    assert data["supabase_anon_key"] is None
+
 def test_supabase_token_auto_provisioning_and_auth(mock_supabase_env):
     """Verifies that a valid Supabase JWT authenticates and provisions user in DB."""
     unique_id = uuid.uuid4().hex[:8]
@@ -109,3 +121,18 @@ def test_invalid_supabase_token_rejected(mock_supabase_env):
     res = client.get("/api/v1/users/me", headers={"Authorization": f"Bearer {forged_token}"})
     assert res.status_code == 401
     assert res.json()["error"]["code"] == "INVALID_TOKEN"
+
+def test_supabase_expired_token_rejected(mock_supabase_env):
+    """Verifies that an expired Supabase token is rejected with TOKEN_EXPIRED."""
+    now_ts = int(time.time())
+    payload = {
+        "sub": str(uuid.uuid4()),
+        "email": "expired.user@supabase.test",
+        "aud": "authenticated",
+        "exp": now_ts - 300,
+        "iat": now_ts - 3600
+    }
+    expired_token = jwt.encode(payload, mock_supabase_env["jwt_secret"], algorithm="HS256")
+    res = client.get("/api/v1/users/me", headers={"Authorization": f"Bearer {expired_token}"})
+    assert res.status_code == 401
+    assert res.json()["error"]["code"] == "TOKEN_EXPIRED"

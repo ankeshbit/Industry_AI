@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 from backend.app.database import get_db
 from backend.app.models.auth import User
 from backend.app.models.machine import MachineCategory
-from backend.app.api.deps import get_current_user
+from backend.app.api.deps import get_current_user, require_machine_write
 from backend.app.services.machine_service import (
     create_machine, list_machines, get_machine, update_machine, archive_machine
 )
@@ -41,7 +41,7 @@ class UpdateMachineRequest(BaseModel):
 @router.post("/machines", status_code=status.HTTP_201_CREATED)
 def create_new_machine(
     req: CreateMachineRequest,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_machine_write),
     db: Session = Depends(get_db)
 ):
     """Creates a machine in the tenant registry (AC-MM-1). Defaults plant_id to default plant."""
@@ -114,7 +114,7 @@ def get_machine_details(
 def patch_machine(
     id: str,
     req: UpdateMachineRequest,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_machine_write),
     db: Session = Depends(get_db)
 ):
     """Updates machine details."""
@@ -130,7 +130,7 @@ def patch_machine(
 @router.post("/machines/{id}/archive", status_code=status.HTTP_200_OK)
 def archive_machine_endpoint(
     id: str,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_machine_write),
     db: Session = Depends(get_db)
 ):
     """Archives machine. Archived machines reject new dataset creations (AC-MM-2)."""

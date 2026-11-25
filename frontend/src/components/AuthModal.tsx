@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { api, User } from '../api';
-import { isSupabaseConfigured } from '../lib/supabase';
+import { isSupabaseConfigured } from '../utils/supabase/client';
 import { Lock, Building2, User as UserIcon, Mail, AlertCircle, Shield, CheckCircle2, Zap } from 'lucide-react';
 import { ForgotPasswordModal } from './ForgotPasswordModal';
 
@@ -22,14 +22,25 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onSuccess, initialView = '
   const [supabaseActive, setSupabaseActive] = useState(isSupabaseConfigured());
 
   useEffect(() => {
-    // Check backend auth config as well to detect server-side Supabase configuration
+    // Check if session was invalidated
+    const notice = sessionStorage.getItem('session_invalidated_notice');
+    if (notice) {
+      setError(notice);
+      sessionStorage.removeItem('session_invalidated_notice');
+    }
+
+    // Check backend auth config to ensure frontend and backend agree on provider
     api.auth.getConfig()
       .then((cfg) => {
-        if (cfg.auth_provider === 'supabase' || isSupabaseConfigured()) {
+        if (cfg.auth_provider === 'supabase' && isSupabaseConfigured()) {
           setSupabaseActive(true);
+        } else if (cfg.auth_provider === 'local') {
+          setSupabaseActive(false);
         }
       })
-      .catch(() => undefined);
+      .catch(() => {
+        setSupabaseActive(isSupabaseConfigured());
+      });
   }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -68,6 +79,10 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onSuccess, initialView = '
         setError('Multi-organisation registration is disabled in single-organisation mode (MS1). An organisation already exists.');
       } else if (err.code === 'ACCOUNT_LOCKED') {
         setError(err.message || 'Account locked for 15 minutes due to repeated failed logins.');
+      } else if (err.code === 'TOKEN_REVOKED') {
+        setError('Your session has been invalidated for security. Please sign in with your credentials.');
+      } else if (err.code === 'ACCOUNT_DEACTIVATED') {
+        setError('Your account is deactivated. Please contact your organization administrator.');
       } else {
         setError(err.message || 'Authentication failed. Please verify credentials.');
       }

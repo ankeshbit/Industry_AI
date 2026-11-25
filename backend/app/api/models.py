@@ -35,6 +35,16 @@ def list_models(db: Session = Depends(get_db)):
             for e in m.evaluations
             if e.evaluation_kind == "REFERENCE_DATASET"
         ]
+        tau = 0.01
+        cost_ratio = 50.0
+        artifact_file = None
+        artifact_checksum = None
+        if m.thresholds and isinstance(m.thresholds, dict):
+            tau = float(m.thresholds.get("optimal_tau", 0.01))
+            cost_ratio = float(m.thresholds.get("cost_ratio", 50.0))
+            artifact_file = m.thresholds.get("artifact_file")
+            artifact_checksum = m.thresholds.get("artifact_sha256")
+
         results.append({
             "id": m.id,
             "registry_name": m.registry_name,
@@ -44,6 +54,12 @@ def list_models(db: Session = Depends(get_db)):
             "algorithm": m.algorithm,
             "stage": m.stage,
             "training_domain": m.training_domain,
+            "model_scope": m.model_scope,
+            "thresholds": m.thresholds,
+            "optimal_threshold": tau,
+            "cost_ratio": cost_ratio,
+            "artifact_file": artifact_file,
+            "artifact_checksum": artifact_checksum,
             "reference_evaluations": evals,
             "customer_specific_validation": None,
             "model_card_uri": m.model_card_uri

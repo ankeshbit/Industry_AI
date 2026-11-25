@@ -21,6 +21,11 @@ from backend.app.models.model import ModelVersion
 from backend.app.models.analysis import AnalysisResult
 from backend.app.models.usage import UsageEvent
 from backend.app.services.compatibility_service import convert_to_canonical
+from backend.app.services.model_loader import (
+    resolve_and_load_model,
+    LoadedModelBundle,
+    clear_model_cache,
+)
 
 CANONICAL_TO_MODEL_FEATURE = {
     "air_temperature": "Air temperature [K]",
@@ -32,29 +37,33 @@ CANONICAL_TO_MODEL_FEATURE = {
 }
 
 PRODUCTION_MODEL_PATHS = {
-    "WITH_TYPE": settings.BASE_DIR / "ml/artifacts/models/production_m2_config_a.joblib",
-    "NO_TYPE": settings.BASE_DIR / "ml/artifacts/models/production_m2_config_b.joblib",
+    "WITH_TYPE": settings.BASE_DIR / "ml" / "artifacts" / "models" / "production_m2_config_a.joblib",
+    "NO_TYPE": settings.BASE_DIR / "ml" / "artifacts" / "models" / "production_m2_config_b.joblib",
 }
 
 # Alias for backwards compatibility with tests and callers
 MODEL_PATHS = PRODUCTION_MODEL_PATHS
 
-LEGACY_MODEL_PATHS = {
-    "WITH_TYPE": settings.BASE_DIR / "ml/artifacts/models/EXP-004_xgboost_config_a.joblib",
-    "NO_TYPE": settings.BASE_DIR / "ml/artifacts/models/EXP-008_xgboost_config_b.joblib",
-}
-
-_LOADED_BUNDLES: Dict[str, Any] = {}
 
 def execute_analysis(
     db: Session,
     org_id: str,
     compatibility_check_id: str,
-    job_id: Optional[str] = None
+    job_id: Optional[str] = None,
+    commit: bool = True
 ) -> AnalysisResult:
     """
     Executes failure prediction analysis for an authorized compatibility check (AC-FP-1..8, AC-AP-1..5).
     """
+    # Prevent duplicate AnalysisResult records if job was retried or previously finished
+    if job_id:
+        existing_res = db.query(AnalysisResult).filter(
+            AnalysisResult.job_id == job_id,
+            AnalysisResult.organisation_id == org_id
+        ).first()
+        if existing_res:
+            return existing_res
+
     check = db.query(CompatibilityCheck).filter(
         CompatibilityCheck.id == compatibility_check_id,
         CompatibilityCheck.organisation_id == org_id
@@ -91,33 +100,20 @@ def execute_analysis(
                 canon_unit = "K" if "temperature" in canon_name else "rpm" if "speed" in canon_name else "Nm" if "torque" in canon_name else "min"
                 input_df[model_col_name] = convert_to_canonical(df_raw[col_name], unit_declared, canon_unit)
 
-    # 3. Load trained model bundle / pipeline
+    # 3. Load trained model bundle via registry-driven loader
     cfg = profile.configuration
-    model_path = PRODUCTION_MODEL_PATHS.get(cfg)
-    if not model_path or not model_path.exists():
-        model_path = LEGACY_MODEL_PATHS.get(cfg)
-    if not model_path or not model_path.exists():
-        raise HTTPException(status_code=500, detail=f"Model artifact not found for configuration '{cfg}'.")
-
-    if str(model_path) not in _LOADED_BUNDLES:
-        _LOADED_BUNDLES[str(model_path)] = joblib.load(model_path)
-    bundle = _LOADED_BUNDLES[str(model_path)]
-
-    if isinstance(bundle, dict):
-        pipeline = bundle["pipeline"]
-        calibrator = bundle.get("calibrator")
-        tau = float(bundle.get("optimal_threshold", 0.01))
-        is_production_bundle = True
-    else:
-        pipeline = bundle
-        calibrator = None
-        tau = 0.45
-        is_production_bundle = False
+    loaded_bundle = resolve_and_load_model(db, profile)
+    pipeline = loaded_bundle.pipeline
+    calibrator = loaded_bundle.calibrator
+    tau = loaded_bundle.optimal_threshold
+    model_path = loaded_bundle.artifact_path
+    is_production_bundle = True
 
     # 4. Predict probabilities (using calibrated probabilities when available)
     if calibrator is not None:
         probabilities = calibrator.predict_proba(input_df)[:, 1]
     else:
+        probabilities = pipeline.predict_proba(input_df)[:, 1]
         probabilities = pipeline.predict_proba(input_df)[:, 1]
 
     # 5. Determine threshold and assign risk classes
@@ -252,11 +248,18 @@ def execute_analysis(
         AnalysisResult.profile_uuid == profile.id
     ).update({"is_latest": False})
 
-    # Fetch corresponding registered model
-    model_record = db.query(ModelVersion).filter(
-        ModelVersion.profile_uuid == profile.id,
-        ModelVersion.stage == "PRODUCTION"
-    ).order_by(ModelVersion.promoted_at.desc()).first()
+    # Provenance metadata
+    summary["provenance"] = {
+        "model_version": loaded_bundle.model_version,
+        "model_version_id": loaded_bundle.model_version_id,
+        "artifact_sha256": loaded_bundle.artifact_sha256,
+        "configuration": loaded_bundle.configuration,
+        "training_domain": "REFERENCE_DATASET",
+        "calibration_method": "Platt Scaling (Logistic Sigmoid)",
+        "decision_threshold": tau,
+        "cost_ratio": round(loaded_bundle.cost_fn / loaded_bundle.cost_fp, 2),
+        "model_card_reference": f"docs/model_cards/ai4i_failure_clf_{'typed' if 'WITH_TYPE' in loaded_bundle.configuration else 'notype'}.md"
+    }
 
     # Create immutable AnalysisResult
     result = AnalysisResult(
@@ -267,7 +270,7 @@ def execute_analysis(
         compatibility_check_id=check.id,
         profile_uuid=profile.id,
         configuration=cfg,
-        model_version_id=model_record.id if model_record else None,
+        model_version_id=loaded_bundle.model_version_id,
         pipeline="A",
         result_version=result_version,
         is_latest=True,
@@ -282,7 +285,7 @@ def execute_analysis(
         },
         summary=summary,
         top_rows=top_rows,
-        artifact_uri=str(model_path),
+        artifact_uri=str(loaded_bundle.artifact_path),
         explanation_meta=explanation_meta,
         limitations=[
             "Model trained on AI4I 2020 synthetic reference dataset; probability calibration applied to ensure realistic failure estimates."
@@ -308,6 +311,10 @@ def execute_analysis(
         details={"result_id": result.id, "rows": total_rows, "configuration": cfg}
     ))
 
-    db.commit()
-    db.refresh(result)
+    if commit:
+        db.commit()
+        db.refresh(result)
+    else:
+        db.flush()
+
     return result

@@ -11,6 +11,7 @@ from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.exceptions import RequestValidationError
 from starlette.exceptions import HTTPException  # base class: also catches routing 404/405
+from sqlalchemy import text
 
 import backend.app.models  # noqa: F401  (registers all tables on Base.metadata before create_all)
 from backend.app.config import settings
@@ -28,6 +29,15 @@ from backend.app.api.models import router as models_router
 async def lifespan(app: FastAPI):
     # Initialize DB schema and seed tables
     Base.metadata.create_all(bind=engine)
+    # Lightweight schema migration for existing PostgreSQL instances
+    try:
+        with engine.connect() as conn:
+            if engine.dialect.name == "postgresql":
+                conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS token_version INTEGER DEFAULT 1 NOT NULL;"))
+                conn.commit()
+    except Exception:
+        pass
+
     db = SessionLocal()
     try:
         seed_database(db)
